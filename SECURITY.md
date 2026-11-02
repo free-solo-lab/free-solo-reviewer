@@ -4,11 +4,11 @@
 
 Please do not open a public issue. Use GitHub's private reporting instead: the **Security** tab → **Report a vulnerability** in this repository. Include steps to reproduce, the affected version or commit and the possible impact.
 
-We will acknowledge the report within a few working days and share a plan for the fix. Fixes are released for the latest version on the `main` branch.
+We will acknowledge the report within a few working days and share a plan for the fix. Fixes are released for the latest version on the `master` branch.
 
 ## Supported versions
 
-Only the latest commit on `main` receives fixes. Run the installer again, or `git pull` and rebuild, to update.
+Only the latest commit on `master` receives fixes. Run the installer again, or `git pull` and rebuild, to update.
 
 ## Threat model
 

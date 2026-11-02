@@ -10,7 +10,7 @@ Reviewer — локальное приложение для ревью пул-р
 Откройте **Терминал** (Spotlight → «Терминал»), вставьте строку и нажмите Return:
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/free-solo-lab/free-solo-reviewer/main/scripts/install-macos.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/free-solo-lab/free-solo-reviewer/master/scripts/install-macos.sh)"
 ```
 
 Скрипт работает на чистом Mac (Apple Silicon или Intel, macOS 13+): ставит недостающее — Homebrew, Git, Node.js 24, GitHub CLI, — собирает **Reviewer.app**, кладёт его в «Программы» и открывает. Homebrew один раз спросит пароль от Mac. Первая сборка занимает около пяти минут. Чтобы обновить приложение, запустите ту же строку ещё раз.
