@@ -30,7 +30,7 @@ node_ok() {
 
 [ "$(uname -s)" = Darwin ] || fail "This installer is for macOS."
 [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = 0 ] ||
-  fail "Terminal runs under Rosetta. Turn off “Open using Rosetta” for Terminal and try again."
+  fail 'Terminal runs under Rosetta. Turn off "Open using Rosetta" for Terminal and try again.'
 case "$(uname -m)" in
   arm64) ARCH=arm64 ;;
   x86_64) ARCH=x64 ;;
