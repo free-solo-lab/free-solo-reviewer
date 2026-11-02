@@ -12,6 +12,8 @@ npm run dev      # UI on http://127.0.0.1:5173, API on port 4318
 
 `npm run demo` starts the app with synthetic repositories, without GitHub or Codex.
 
+Update `package-lock.json` with npm 11.19 or newer, the one that comes with Node.js 24 (`npx npm@11.19.1 install`). Older npm drops optional native packages such as `tree-sitter` from the lock file, and `npm ci` in CI then fails.
+
 ## Before opening a pull request
 
 ```sh
