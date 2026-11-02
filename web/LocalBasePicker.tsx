@@ -112,7 +112,7 @@ export function LocalBasePicker({
             className="local-base-head"
             title={t('The reviewed branch with uncommitted changes')}
           >
-            → {current}
+            ← {current}
           </span>
         )}
       </div>
