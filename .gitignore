@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.review/
+playwright-report/
+test-results/
+*.log
+.env
+.claude/
+.idea/
+.env.*
+.DS_Store

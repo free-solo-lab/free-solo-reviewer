@@ -1,0 +1,53 @@
+{
+  "name": "free-solo-reviewer",
+  "version": "0.1.0",
+  "description": "Local reviewer for GitHub pull requests in Java/Kotlin Spring services: sequence diagrams, SQL, contracts and transactions linked to the exact source lines.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"tsx watch server/main.ts\" \"vite --host 127.0.0.1\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "node --import tsx server/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo": "npm run build && node --import tsx tests/demo.ts",
+    "format": "prettier --write server shared web tests docs *.ts *.json *.md",
+    "format:check": "prettier --check server shared web tests docs *.ts *.json *.md",
+    "test:codex": "node --import tsx tests/codex-smoke.ts"
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.6",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/manrope": "^5.3.0",
+    "@openai/codex-sdk": "^0.163.0",
+    "fastify": "^5.12.7",
+    "highlight.js": "^11.12.0",
+    "lowlight": "^3.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "swagger-ui-react": "^5.33.3",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.20.8",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/swagger-ui-react": "^5.18.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^4.1.11"
+  }
+}
