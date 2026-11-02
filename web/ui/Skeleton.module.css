@@ -1,0 +1,28 @@
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.row {
+  height: 14px;
+  border-radius: 4px;
+  background: var(--hover);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+/* Text-like rows vary in length; block rows stand for full-width items. */
+.rows:not(.uniform) .row:nth-child(3n + 2) {
+  width: 78%;
+}
+.rows:not(.uniform) .row:nth-child(3n) {
+  width: 62%;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    animation: none;
+  }
+}

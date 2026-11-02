@@ -1,0 +1,51 @@
+.banner {
+  flex-shrink: 0;
+  margin: 8px 16px 0;
+  border-radius: var(--radius-md);
+  background: #f4f4f4;
+  color: #8a5a1f;
+  font-size: 12.5px;
+}
+.banner > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.banner > summary::-webkit-details-marker {
+  display: none;
+}
+.banner strong {
+  white-space: nowrap;
+}
+.reason {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9a7444;
+}
+.more {
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.banner[open] .more {
+  visibility: hidden;
+}
+.banner p {
+  margin: 0;
+  padding: 0 12px 6px 34px;
+  color: inherit;
+}
+.banner pre {
+  margin: 0;
+  padding: 0 12px 10px 34px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+}

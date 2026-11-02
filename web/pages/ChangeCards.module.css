@@ -1,0 +1,84 @@
+.title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 8px;
+  font-size: 13px;
+}
+.title span {
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  list-style: none;
+}
+.list li + li {
+  border-top: 1px solid var(--border);
+}
+.card {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-areas:
+    'risk head'
+    '. text';
+  align-items: center;
+  gap: 3px 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 500;
+}
+.card:hover {
+  background: var(--hover);
+}
+.risk {
+  grid-area: risk;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.high {
+  background: var(--red);
+}
+.check {
+  background: var(--orange);
+}
+.head {
+  grid-area: head;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kind {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.text {
+  grid-area: text;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}

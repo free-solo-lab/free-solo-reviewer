@@ -1,139 +1,169 @@
-# Возможности и устройство
+# Features and internals
 
-Подробное описание интерфейса и внутренней работы. Установка и быстрый старт — в [README](../README.md).
+A detailed tour of the interface and of how Reviewer works. For installation and a quick start, see the [README](../README.md).
 
-## Обзор
+## Overview
 
-В разделе «Что меняется» описания отображаются как Markdown: абзацы, заголовки, списки, таблицы и подсвеченные блоки кода. Новые анализы получают обязательный Markdown-шаблон: суть, основные изменения, до/после и проверки; для сценариев — цель, ход, изменение поведения, ошибки и ограничения. Старые абзацы при отображении разбиваются на подзаголовки и списки без изменения сохранённого анализа. На больших экранах обзор использует всю доступную ширину.
+**What changes** renders descriptions as Markdown: paragraphs, headings, lists, tables and highlighted code blocks. The model follows a fixed structure — summary, notable changes and what needs checking; for scenarios — goal, flow, behavior change, errors and limitations. Older plain-prose descriptions are split into headings and lists on display without changing the saved analysis.
 
-Второе боковое меню переключает общий раздел «Что меняется» и описания отдельных сценариев. Выбранное описание занимает всю рабочую область, сохраняет Markdown-форматирование и открывает соответствующую диаграмму одной кнопкой.
+The secondary menu switches between the overall **What changes** page and individual scenarios. A scenario opens as its **Description**, **Code** — the changed methods it touches, each with its diff, comments and navigation — or **Diagram**.
 
-## Взаимодействия (sequence-диаграммы)
+## Sequence diagrams
 
-Сценарии доступны во втором боковом меню с поиском и фильтром сервиса. Диаграмма занимает всю оставшуюся ширину и высоту окна; прокрутка работает внутри неё. Описание по умолчанию свёрнуто, общий переключатель внутренних вызовов находится в верхней панели диаграммы. Выбор сценария начинает просмотр диаграммы с начала.
+Scenarios are listed in the secondary menu with search and a service filter. The diagram fills the rest of the window and scrolls inside itself. **Internal calls** in the diagram toolbar collapses or expands the internal calls of all services; choosing a scenario starts at the top of its diagram.
 
-Названия участников закреплены сверху при вертикальной прокрутке: сервисы и вложенные классы остаются видны вместе. Горизонтальная прокрутка синхронно перемещает заголовки и линии вызовов. Это действует и для диаграмм тестов. Нажатие на карточку класса открывает весь файл в «Коде и ревью»; карточки сервисов меняют детализацию. Раскрытое описание сценария прокручивается в общей области вместе с диаграммой.
+Participant names stay pinned while scrolling vertically, so services and their nested classes remain visible; horizontal scrolling moves the headers and lifelines together. The same applies to test diagrams. Clicking a class card opens the whole file in **Code and review**; service cards change the level of detail.
 
-Один репозиторий считается одним сервисом; в сессии допускается один PR на репозиторий и до восьми репозиториев. Возвраты отделены от вызовов и не образуют ложных циклических зависимостей. Реальные циклы группируются алгоритмом strongly connected components.
+One repository is one service; a session holds one PR per repository and up to eight repositories. Returns are kept apart from calls and never form false cycles; real cycles are grouped with strongly connected components.
 
-База данных отображается отдельным логическим участником сервиса. Если SQL-шаг ссылается на цепочку через несколько локальных сервисов, интерфейс восстанавливает промежуточные вызовы только при единственном подтверждённом пути по местам вызова той же версии кода. Неоднозначные вызовы не подставляются догадкой. Для сохранённых анализов обращения к БД восстанавливаются из индекса методов без обращения к Codex: клики открывают реализацию запроса и место вызова. Такие связи помечены как предположения. Миграции не добавляются в runtime-сценарий.
+The database is a separate logical participant of its service. When a SQL step points to a chain through several local services, the interface restores the intermediate calls only when there is a single confirmed path through call sites of the same code version; ambiguous calls are never guessed. For saved analyses, database access is restored from the method index without asking Codex, and such links are marked as assumptions. Migrations are not added to runtime scenarios.
 
-Внутренние классы сервиса показаны отдельными пунктирными линиями под общей шапкой сервиса; стрелки идут между классами, а SQL — от репозитория к БД. Кнопка у сервиса сворачивает его внутренние вызовы; общий переключатель сворачивает все сервисы, сохраняя межсервисные и DB-вызовы, транзакционные рамки и навигацию к коду. Самовызовы внутри одного класса скрыты.
+Internal classes of a service have their own dashed lifelines under the service header; arrows connect classes, and SQL goes from the repository to the database. Self-calls within one class are hidden.
 
-Полнота каталога сценариев проверяется по затронутым входным методам обработчиков, контроллеров и фоновых задач. Если часть входов отсутствует в шагах сценариев, анализ отмечается как частичный. Кнопка «Дополнить сценарии» запрашивает только недостающие цепочки и сохраняет исходные сценарии, замечания и комментарии.
+The scenario catalog is checked against the affected entry points: handlers, controllers and background jobs. If some entry points have no scenario, the analysis is marked partial. **Complete scenarios** asks only for the missing chains and keeps existing scenarios, remarks and comments.
 
-Перед выдачей результата Codex получает требование повторно сверить каждую цепочку вызовов с исходниками и индексом: вход, локальные делегирования, клиентские обёртки, запросы БД, ветвления и возвраты. Пропуски контекста остаются явными неизвестными; это проверка согласованности статического анализа, а не runtime-верификация.
+Before returning a result, Codex is required to verify every call chain against the sources and the index: the entry, local delegation, client wrappers, database queries, branches and returns. Missing context stays an explicit unknown. This is a consistency check of a static analysis, not runtime verification.
 
-## Код и ревью
+## Code and review
 
-Второе боковое меню показывает все репозитории ревью отдельными корнями: сервисы, протоколы и контекстные репозитории без PR. Доступны все текстовые файлы снимка и удалённые файлы PR, дерево папок, поиск, статусы и счётчики изменений. Фильтр «Только изменения PR» скрывает неизменённые файлы; можно скрыть просмотренные файлы и отфильтровать по расширению.
+The secondary menu shows every repository of the review as its own root: services, protocols and context repositories without a PR. All text files of the snapshot and files removed by the PR are available, with a folder tree, search, statuses and change counters. **Changed files only** hides unchanged files; viewed files can be hidden and files filtered by extension.
 
-Просмотрщик показывает полный исходник с добавленными (`+`, зелёный) и удалёнными (`−`, красный) строками PR. Удалённые строки отображаются с исходными номерами; комментарий к ним привязывается к стороне `base`, в том числе при переименовании файла. Перетаскивание за номер строки выделяет диапазон для комментария (у края окна включается автопрокрутка); Shift-клик тоже работает. Комментарии сразу появляются под соответствующим диапазоном во всех окнах просмотра, включая тесты и переходы с диаграмм.
+The viewer shows the full source with added (`+`, green) and removed (`−`, red) lines. Removed lines keep their original numbers, and a comment on them is anchored to the `base` side, including renamed files. Dragging across line numbers selects a range for a comment (the view scrolls at the window edge); Shift-click works too. Comments appear under their range in every code view, including tests and jumps from diagrams.
 
-⌘-клик (Ctrl-клик на других платформах) по имени вызываемого метода открывает его определение в той же зафиксированной версии репозитория. При перегрузках или неразрешённом получателе показывается выбор вариантов. «Назад»/«Вперёд» возвращают строку, прокрутку и несохранённый комментарий; доступны ⌘[ / ⌘] и Alt+← / Alt+→. Это навигация по синтаксическому индексу, без полного разрешения типов JVM.
+⌘-click (Ctrl-click elsewhere) on a called method opens its definition in the same pinned version of the repository. Overloads and unresolved receivers show a choice. **Back** and **Forward** restore the line, scroll position and unsaved comment; ⌘[ / ⌘] and Alt+← / Alt+→ work too. Navigation uses the syntax index, not full JVM type resolution.
 
-Флажок «Просмотрен» хранится в SQLite и привязан к PR, пути и хешу содержимого: новый SHA с прежним содержимым отметку сохраняет, изменённый файл снова становится непросмотренным. Методы можно отмечать отдельно.
+**Viewed** marks are stored in SQLite and tied to the PR, the path and the content hash: a new SHA with the same content keeps the mark, a changed file becomes unviewed again. Methods can be marked separately.
 
-Черновики сохраняются в локальную SQLite автоматически после короткой паузы; резервная копия в браузере позволяет восстановить изменения при перезагрузке до ответа сервера. Восстановление ограничено той же сессией, снимком и head SHA.
+Drafts are saved to SQLite automatically after a short pause; a browser backup restores changes if the page reloads before the server answers. Restoring is limited to the same session, snapshot and head SHA.
 
-## Публикация ревью
+## Publishing a review
 
-Для каждого PR отдельно выбирается Comment, Request changes или Approve. Предварительный просмотр показывает выбранные комментарии и коммит; публикует только кнопка отправки. Inline-комментарии отправляются на добавленные/удалённые строки нужного PR, остальные замечания входят в общий текст. Ревью явно содержит `commit_id`.
+Each PR gets its own decision: Comment, Request changes or Approve. The preview shows the selected comments, the commit and the GitHub account the review is sent as; only the send button publishes. Inline comments go to added or removed lines of the right PR, other remarks join the overall text, and the review always carries an explicit `commit_id`.
 
-GitHub CLI должен иметь доступ к чтению репозитория и публикации pull request reviews (для fine-grained токенов — `Contents: read`, `Pull requests: write`). Нельзя одобрять собственные PR или запрашивать в них изменения.
+The GitHub CLI needs read access to the repository and permission to publish pull request reviews (`Contents: read`, `Pull requests: write` for fine-grained tokens). GitHub does not allow approving or requesting changes on your own PR, and approving requires explicit access to the repository.
 
-Если GitHub не подтвердил исход отправки, повторная публикация блокируется до сверки: кнопка «Сверить с GitHub» ищет идентификатор отправки среди ваших ревью и не делает слепой повторный POST. При подтверждённом отказе GitHub (HTTP 4xx) черновик снова доступен для исправления.
+If GitHub does not confirm the outcome of a submission, publishing again is blocked until it is verified: **Verify with GitHub** looks for the submission among your reviews instead of blindly posting again. When GitHub definitely rejects a review (HTTP 4xx), the reason is shown and the draft becomes editable again.
 
-## Обновления PR и повторное ревью
+## PR updates and follow-up reviews
 
-Если PR обновился, отправка блокируется. Кнопка «Проверить обновления» сначала сравнивает метаданные PR: если новых коммитов и ответов нет, текущий анализ сохраняется без вызова модели. При изменениях запускается дополнительный анализ diff от предыдущего просмотренного head до нового, прежних замечаний и новых ответов GitHub.
+A changed PR blocks publishing. **Update the PR** first compares the PR metadata: without new commits or replies the current analysis stays and the model is not called. Otherwise a follow-up analysis covers the diff from the previously reviewed head to the new one, the earlier remarks and the new GitHub replies. Replies without code changes refresh the discussion and keep the finished review.
 
-Снимки, анализ и черновики прошлого ревью сохраняются в истории версий. В обзоре появляется блок «После прошлого ревью» с изменёнными файлами, ответами и статусами замечаний. Статусы исправлений — оценки модели со ссылками на текущий код; отсутствие ответа означает «Требует проверки». Исходное описание сохраняется дословно, а неизменённые выводы переносятся лишь после сравнения их исходников. Текст комментариев переносится в новый черновик; при изменении head их привязки сбрасываются до ручной перепроверки.
+Snapshots, analyses and drafts of earlier reviews are kept in the version history. The overview gains a **Changes since the review** block with changed files, replies and the status of earlier remarks. Fix statuses are the model's assessment with references to the current code; an item without an answer keeps the **Check** status. The original description is kept word for word, and unchanged conclusions carry over only after their sources are compared. Comment texts move into the new draft; when the head changes, their anchors are reset for a manual recheck.
 
-## Транзакции
+## Transactions
 
-Транзакционные области аннотированных методов выделяются рамками на диаграмме. Подпись содержит propagation, а пояснение — правила rollback, ограничения и ссылку на код. REQUIRED обозначает присоединение к внешней транзакции или создание новой; SUPPORTS/MANDATORY показаны условно, NOT_SUPPORTED/NEVER — как области без транзакции. Возможный self-invocation помечается как неподтверждённая граница. Рамки восстанавливаются из индекса без LLM и не означают наблюдавшиеся BEGIN/COMMIT; аннотации только на уровне класса пока не учитываются.
+Transactional scopes of annotated methods are drawn as frames on the diagram. The label shows the propagation, the tooltip the rollback rules, limitations and a link to the code. REQUIRED means joining an outer transaction or starting a new one; SUPPORTS and MANDATORY are shown as conditional, NOT_SUPPORTED and NEVER as scopes without a transaction. Possible self-invocation is marked as an unconfirmed boundary. Frames are rebuilt from the index without an LLM and do not mean an observed BEGIN or COMMIT; class-level annotations are not yet taken into account.
 
-Рамка охватывает метод с `@Transactional` и подтверждённые вызовы его методов и репозиториев; участвуют только соответствующие классы и БД, а не весь сервис.
+A frame covers the `@Transactional` method and confirmed calls of its methods and repositories; only the involved classes and the database take part, not the whole service.
 
-Программные транзакции jOOQ (`DSLContext.transaction`, `transactionResult`, `transactionAsync`, `transactionResultAsync`, `transactionPublisher`) распознаются в Java/Kotlin по AST и объявленному типу `DSLContext`. Рамка охватывает inline callback, в том числе обращения к БД через вспомогательные методы того же бина. Вложенные области показываются отдельно с оговоркой о TransactionProvider/savepoint. Для async/reactive завершение callback не считается commit. Метод-ссылки, пользовательские обёртки и произвольные алиасы `DSLContext` пока не восстанавливаются.
+Programmatic jOOQ transactions (`DSLContext.transaction`, `transactionResult`, `transactionAsync`, `transactionResultAsync`, `transactionPublisher`) are recognized in Java and Kotlin by the AST and the declared `DSLContext` type. The frame covers the inline callback, including database access through helper methods of the same bean. Nested scopes are shown separately with a note on the TransactionProvider and savepoints. For async and reactive code, the end of the callback is not treated as a commit. Method references, custom wrappers and arbitrary `DSLContext` aliases are not rebuilt yet.
 
 ## SQL
 
-Нажатие на стрелку к БД открывает панель с SQL из сохранённого анализа. Модель восстанавливает параметризованные запросы по jOOQ/ORM/JDBC-коду, конфигурации и вспомогательным методам; сервер проверяет структуру и ссылки на исходники. Варианты динамического запроса показываются отдельно, каждый со своими bind-параметрами и неизвестными частями. Открытие панели не запускает модель, код PR или SQL.
+Clicking an arrow to the database opens a panel with SQL from the saved analysis. The model rebuilds parameterized queries from jOOQ, ORM and JDBC code, configuration and helper methods; the server checks the structure and the source references. Variants of a dynamic query are shown separately, each with its bind parameters and unknown parts. Opening the panel never runs the model, the PR code or SQL.
 
-SQL модели **не является подтверждённой runtime-трассировкой**: generated fields, Settings, ORM mapping и параметры могут менять конечный запрос. Если контекста не хватает, модель возвращает причину вместо выдуманного запроса. Кнопка «Дополнить SQL» запрашивает только методы без сохранённых запросов и не перезаписывает остальные.
+Model SQL **is not a confirmed runtime trace**: generated fields, settings, ORM mapping and parameters can change the final query. When context is missing, the model returns the reason instead of an invented query. **Complete SQL with Codex** asks only for methods without saved queries and never overwrites the others.
 
-Для фактического SQL доступен импорт JSON из трассировки jOOQ `ExecuteListener` или Hibernate `StatementInspector` (пример формата — в окне SQL). SHA и координаты метода проверяются; приложение не может удостоверить происхождение загруженного лога и не запускает SQL.
+Actual SQL can be imported as JSON from a jOOQ `ExecuteListener` or Hibernate `StatementInspector` trace (the SQL panel shows the format). The SHA and method coordinates are checked; Reviewer cannot vouch for the origin of an uploaded log and never runs SQL.
 
-## База данных
+## Database
 
-Раздел показывает таблицы, поля с типами и nullable/PK/FK, индексы и внешние ключи из SQL-миграций зафиксированных снимков. Сравнение merge-base и head выделяет добавленные, удалённые и изменённые таблицы, колонки, индексы и связи. Во втором меню доступны вся схема и миграции сервиса с поиском, версиями Flyway и отметками изменений PR. INSERT/UPDATE/DELETE/TRUNCATE отмечаются как изменения данных. Нажатие на таблицу открывает diff соответствующей миграции.
+The **Database** section opens in **Code**: the SQL of every migration the PR adds, changes or removes, whole, with its diff and comments. **Model** shows tables, columns with types and nullable/PK/FK flags, indexes and foreign keys from the SQL migrations of the pinned snapshots. Comparing the merge base with the head highlights added, removed and changed tables, columns, indexes and relations. Unrelated tables are laid out in rows of up to four columns, linked tables stay together, and the model opens fitted to the window; zoom with the controls in its corner or with Ctrl/Cmd and the mouse wheel. Clicking a table opens the DDL of its migration.
 
-Масштаб схемы регулируется кнопками −/+ (25–200%), Ctrl/Cmd с колесом мыши масштабирует вокруг курсора.
+The secondary menu lists the service's migrations with search, Flyway versions and PR change marks; choosing one narrows both views to it. INSERT, UPDATE, DELETE and TRUNCATE are marked as data changes.
 
-Извлечение поддерживает CREATE TABLE/INDEX, ключи, ограничения, основные ALTER COLUMN/ADD/DROP и DROP TABLE/INDEX. Динамический и неподдержанный DDL отмечается как неполнота схемы. Это восстановление по миграциям в порядке имён файлов, а не снимок работающей БД; миграции не исполняются.
+Extraction supports CREATE TABLE/INDEX, keys, constraints, the main ALTER COLUMN/ADD/DROP forms and DROP TABLE/INDEX. Dynamic and unsupported DDL is reported as an incomplete schema. The schema is rebuilt from migrations in file-name order, not read from a running database; migrations are never executed.
 
-## Тесты
+## Tests
 
-Раздел содержит список тестов, сгруппированных по сценариям; неоднозначные проверки группируются по тестовому классу. Для каждого теста — краткое описание и диаграмма только его шагов: setup, моки, явные вызовы и assertions. Внутренний граф production-методов не раскрывается. Нажатие на шаг открывает код теста на нужной строке.
+Tests are grouped by scenario; ambiguous checks are grouped by test class. Each test opens as its **Description** (summary and steps with the data they prepare or check), **Code** (the whole test method with diff and comments) or **Diagram** (setup, mocks, explicit calls and assertions). The internal graph of production methods is not expanded.
 
-Полнота сверяется с аннотированными тестовыми методами снимка; параметризованный метод считается одним тестом. Недостающие тесты запрашиваются пакетами по десять с сохранением каждого пакета. Тесты не запускаются: pass/fail и покрытие не утверждаются.
+Completeness is checked against the annotated test methods of the snapshot; a parameterized method counts as one test. Missing tests are requested in batches of ten, each batch saved as it arrives. Tests are never run: pass/fail and coverage are not claimed.
 
-## Как устроено
+## Review requests
 
-- **React / Vite** — интерфейс, SVG sequence-диаграммы, локальный Swagger UI, подсветка синтаксиса (Java, Kotlin, SQL, TypeScript, YAML и др.).
-- **Fastify** — локальный JSON API и SSE-прогресс. Только loopback, проверка Host/Origin, JSON для изменяющих запросов, CSP.
-- **SQLite** (`node:sqlite`) — репозитории, сессии, результаты, индекс по SHA, черновики и состояние отправки. После перезапуска незавершённый анализ помечается как прерванный, отправка — как неопределённая.
-- **Git** — fetch объектов PR и извлечение текстовых файлов merge-base/head. Ветки и рабочие файлы не меняются; обновляются только объекты и `FETCH_HEAD`.
-- **Tree-sitter** — синтаксический разбор Java и Kotlin: методы, аннотации, места вызовов. Это не полное разрешение типов.
-- **Codex SDK** — структурированный JSON по общей Zod-схеме (`shared/model.ts`). Сервер проверяет существование файлов и диапазоны строк и отбрасывает неподтверждённые ссылки.
-- **GitHub** — `gh api` с авторизацией пользователя.
+**Review requests** at the bottom of the sidebar lists open PRs that request a review from the current GitHub user or one of their teams, grouped by repository. Requests without activity for two weeks are folded away and not counted. **Start review** creates a review of the PR in a connected repository, or asks for the folder of a local clone first. Lists are cached per user, so switching users in the bottom-left menu is instant.
 
-Кэш индекса привязан к SHA, стороне base/head и версии анализатора. Проверенные результаты модели кэшируются по набору SHA, метаданным PR, версии анализатора, провайдеру и модели; уже выполненный анализ той же версии повторно не запускается. После ошибки Codex «Повторить анализ» делает новый запрос: неудачный ответ не попадает в кэш.
+## Settings
 
-Интерфейс `AnalysisProvider` в `server/provider.ts` позволяет подключить другую модель, сохранив формат артефактов и проверки доказательств.
+- **Language** — English or Russian for menus, messages and the prose Codex writes. Prompts are in English and receive the language as `{{language}}`; logs and markers saved in another language are still recognized.
+- **Analysis stages** — change descriptions, scenario completion, SQL and test descriptions can be turned off. A skipped stage is remembered on the run, does not make the analysis partial and is never cached as a complete result.
+- **Analysis prompts** — edit, save and restore each template; a run that was interrupted continues with the template it started with.
+- **Analysis statistics** — stages, requests, duration and tokens of every run; older runs are reconstructed approximately from their logs.
 
-## Удаление ревью
+## Architecture
 
-В левом списке наведите на ревью и нажмите корзину. Удаляются локальная сессия, история анализов, черновики, снимки кода и результаты кэша, не используемые другими ревью. PR и опубликованные комментарии в GitHub не меняются. Активный анализ нужно сначала остановить, незавершённую отправку — сверить с GitHub.
+- **React and Vite** — the interface, SVG sequence diagrams, a local Swagger UI and syntax highlighting (Java, Kotlin, SQL, TypeScript, YAML and more).
+- **Fastify** — a local JSON API with SSE progress. Loopback only, Host and Origin checks, JSON for every state-changing request, a strict CSP.
+- **SQLite** (`node:sqlite`) — repositories, sessions, results, the index per SHA, drafts, settings and submission state. After a restart, an unfinished analysis is marked interrupted and a submission uncertain.
+- **Git** — fetching PR objects and reading text files of the merge base and head. Branches and working files are not touched; only objects and `FETCH_HEAD` are updated. Hooks and `core.fsmonitor` are disabled for every Git call.
+- **Tree-sitter** — syntax parsing of Java and Kotlin: methods, annotations and call sites. This is not full type resolution.
+- **Codex SDK** — structured JSON matching a shared Zod schema (`shared/model.ts`). The server checks that files and line ranges exist and drops unconfirmed references.
+- **GitHub** — `gh api` with the user's credentials, per repository or per current user.
+- **i18n** — English source texts with catalogs in `shared/locales/`; the server and the interface share one language setting.
+
+The index cache is keyed by SHA, side and analyzer version. Verified model results are cached by the set of SHAs, PR metadata, analyzer version, provider and model; an analysis of the same version is never repeated. After a Codex error, a new attempt makes a new request: failed answers never reach the cache.
+
+`AnalysisProvider` in `server/provider.ts` lets you plug in another model while keeping the artifact format and evidence checks.
+
+## Deleting a review
+
+Hover a review in the sidebar and press the trash icon. The local session, analysis history, drafts, code snapshots, Codex fix context and cached results not used by other reviews are deleted. The PR and comments published on GitHub are not changed. Stop a running analysis and verify an unfinished submission first.
 
 ## HTTP API
 
-Сервер слушает только `127.0.0.1`. Все изменяющие запросы требуют `Content-Type: application/json`.
+The server listens on `127.0.0.1` only. Every state-changing request requires `Content-Type: application/json`. Request and response types live in `shared/model.ts`.
 
-| Метод      | Путь                                             | Назначение                                 |
-| ---------- | ------------------------------------------------ | ------------------------------------------ |
-| `GET`      | `/api/health`                                    | Проверка работы сервера                    |
-| `GET`      | `/api/status`                                    | Авторизация GitHub и конфигурация модели   |
-| `GET`      | `/api/repositories`                              | Подключённые репозитории                   |
-| `POST`     | `/api/repositories`                              | Подключение локального репозитория по пути |
-| `POST`     | `/api/repositories/pick-directory`               | Системный диалог выбора папки              |
-| `GET`      | `/api/repositories/:id/pulls`                    | Открытые PR репозитория                    |
-| `GET`      | `/api/sessions`                                  | Список ревью                               |
-| `POST`     | `/api/sessions`                                  | Создание ревью со снимками Git             |
-| `GET`      | `/api/sessions/:id`                              | Снимки, анализ и история версий            |
-| `DELETE`   | `/api/sessions/:id`                              | Удаление ревью и его локальных данных      |
-| `POST`     | `/api/sessions/:id/refresh`                      | Проверка обновлений PR и новых ответов     |
-| `POST`     | `/api/sessions/:id/analyze`                      | Запуск анализа                             |
-| `POST`     | `/api/sessions/:id/scenario-analysis`            | Дополнение недостающих сценариев           |
-| `POST`     | `/api/sessions/:id/sql-analysis`                 | Дополнение SQL                             |
-| `POST`     | `/api/sessions/:id/test-analysis`                | Дополнение разбора тестов                  |
-| `POST`     | `/api/sessions/:id/cancel`                       | Отмена анализа                             |
-| `GET`      | `/api/sessions/:id/events`                       | SSE-прогресс с поддержкой `Last-Event-ID`  |
-| `GET`      | `/api/sessions/:id/source`                       | Файл снимка (`repoId`, `side`, `path`)     |
-| `GET`      | `/api/sessions/:id/code-comparison`              | Сравнение файла с прошлой версией ревью    |
-| `GET`      | `/api/sessions/:id/database-schema`              | Схема БД из миграций (`snapshotId`)        |
-| `GET`      | `/api/sessions/:id/sql-preview`                  | SQL метода из сохранённого анализа         |
-| `POST`     | `/api/sessions/:id/sql-capture`                  | Импорт фактического SQL из трассировки     |
-| `GET, PUT` | `/api/sessions/:id/viewed-files`                 | Отметки «Просмотрен» для файлов            |
-| `GET, PUT` | `/api/sessions/:id/viewed-methods`               | Отметки «Просмотрен» для методов           |
-| `GET`      | `/api/sessions/:id/discussion`                   | Обсуждения PR из GitHub                    |
-| `POST`     | `/api/sessions/:id/discussion/replies`           | Ответ в ветку обсуждения                   |
-| `PUT`      | `/api/sessions/:id/discussion/reactions`         | Реакция на комментарий                     |
-| `GET`      | `/api/sessions/:id/drafts`                       | Черновики по PR                            |
-| `PUT`      | `/api/sessions/:id/drafts/:snapshotId`           | Сохранение черновика                       |
-| `POST`     | `/api/sessions/:id/drafts/:snapshotId/submit`    | Публикация ревью в GitHub                  |
-| `POST`     | `/api/sessions/:id/drafts/:snapshotId/reconcile` | Сверка результата отправки с GitHub        |
-
-Типы запросов и ответов — в `shared/model.ts`.
+| Method     | Path                                             | Purpose                                      |
+| ---------- | ------------------------------------------------ | -------------------------------------------- |
+| `GET`      | `/api/health`                                    | Server liveness                              |
+| `GET`      | `/api/status`                                    | GitHub sign-in and model configuration       |
+| `GET`      | `/api/runtime`                                   | Identity of the running server               |
+| `GET`      | `/api/repositories`                              | Connected repositories                       |
+| `POST`     | `/api/repositories`                              | Connect a local repository by path           |
+| `POST`     | `/api/repositories/pick-directory`               | System folder picker                         |
+| `GET`      | `/api/repositories/:id/pulls`                    | Open PRs of a repository                     |
+| `PUT`      | `/api/repositories/:id/github-user`              | GitHub account of a repository               |
+| `GET`      | `/api/github/accounts`                           | `gh` accounts and the current user           |
+| `PUT`      | `/api/github/current`                            | Switch the current GitHub user               |
+| `GET`      | `/api/github/review-requests`                    | Open PRs waiting for a review (`login`)      |
+| `GET,POST` | `/api/github/login`                              | Add a `gh` account with a one-time code      |
+| `POST`     | `/api/github/login/cancel`                       | Cancel the sign-in                           |
+| `GET`      | `/api/sessions`                                  | List of reviews                              |
+| `POST`     | `/api/sessions`                                  | Create a review with Git snapshots           |
+| `GET`      | `/api/sessions/:id`                              | Snapshots, analysis and version history      |
+| `DELETE`   | `/api/sessions/:id`                              | Delete a review and its local data           |
+| `POST`     | `/api/sessions/:id/refresh`                      | Check the PR for new commits and replies     |
+| `POST`     | `/api/sessions/:id/analyze`                      | Start or continue the analysis               |
+| `POST`     | `/api/sessions/:id/scenario-analysis`            | Complete missing scenarios                   |
+| `POST`     | `/api/sessions/:id/sql-analysis`                 | Complete SQL                                 |
+| `POST`     | `/api/sessions/:id/test-analysis`                | Complete the test analysis                   |
+| `POST`     | `/api/sessions/:id/analysis-message`             | Add a note to the running analysis           |
+| `POST`     | `/api/sessions/:id/cancel`                       | Cancel the analysis                          |
+| `GET`      | `/api/sessions/:id/events`                       | SSE progress with `Last-Event-ID` support    |
+| `GET`      | `/api/sessions/:id/source`                       | A snapshot file (`repoId`, `side`, `path`)   |
+| `GET`      | `/api/sessions/:id/navigation-index`             | Methods and call sites for navigation        |
+| `GET`      | `/api/sessions/:id/code-comparison`              | A file compared with an earlier review       |
+| `GET`      | `/api/sessions/:id/database-schema`              | Database schema from migrations              |
+| `GET`      | `/api/sessions/:id/sql-preview`                  | SQL of a method from the saved analysis      |
+| `POST`     | `/api/sessions/:id/sql-capture`                  | Import actual SQL from a trace               |
+| `GET,PUT`  | `/api/sessions/:id/viewed-files`                 | “Viewed” marks of files                      |
+| `GET,PUT`  | `/api/sessions/:id/viewed-methods`               | “Viewed” marks of methods                    |
+| `GET`      | `/api/sessions/:id/discussion`                   | PR discussions from GitHub                   |
+| `POST`     | `/api/sessions/:id/discussion/replies`           | Reply in a discussion thread                 |
+| `PUT`      | `/api/sessions/:id/discussion/reactions`         | React to a comment                           |
+| `GET`      | `/api/sessions/:id/drafts`                       | Drafts per PR                                |
+| `PUT`      | `/api/sessions/:id/drafts/:snapshotId`           | Save a draft                                 |
+| `POST`     | `/api/sessions/:id/drafts/:snapshotId/submit`    | Publish a review on GitHub                   |
+| `POST`     | `/api/sessions/:id/drafts/:snapshotId/reconcile` | Verify a submission with GitHub              |
+| `GET,POST` | `/api/sessions/:id/fix-chat`                     | Fix chat with Codex: plan, apply or one step |
+| `POST`     | `/api/sessions/:id/fix-chat/respond`             | Answer a Codex question or approval request  |
+| `POST`     | `/api/sessions/:id/fix-chat/cancel`              | Stop the fixes                               |
+| `GET,PUT`  | `/api/sessions/:id/working-file`                 | Read or save a file of the working folder    |
+| `POST`     | `/api/sessions/:id/checkout`                     | Switch the working folder to the PR branch   |
+| `GET,PUT`  | `/api/settings/language`                         | Interface and response language              |
+| `GET,PUT`  | `/api/settings/steps`                            | Optional analysis stages turned off          |
+| `GET`      | `/api/settings/prompts`                          | Prompt templates                             |
+| `PUT`      | `/api/settings/prompts/:id`                      | Save or restore a prompt template            |
+| `GET`      | `/api/settings/statistics`                       | Analysis runs                                |
+| `GET`      | `/api/settings/statistics/:id`                   | Stages and requests of one run               |

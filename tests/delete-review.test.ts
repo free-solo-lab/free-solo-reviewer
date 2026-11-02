@@ -88,7 +88,7 @@ describe('deleting saved PR reviews', () => {
     f.store.saveSession(first);
     f.store.saveSession(second);
     for (const fingerprint of ['shared-cache', 'history-cache', 'orphan-cache'])
-      f.store.saveAnalysisResult(fingerprint, first.run.result);
+      f.store.saveAnalysisResult(fingerprint, first.run.result, first.snapshots);
     const draft = (await f.request('GET', `/api/sessions/${first.id}/drafts`)).json<
       ReviewDraft[]
     >()[0];

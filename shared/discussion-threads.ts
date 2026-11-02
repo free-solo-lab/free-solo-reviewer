@@ -1,5 +1,6 @@
 import type { Evidence, ReviewDiscussion, ReviewDraft, Snapshot } from './model.js';
 import { reviewFilePath } from './viewed-files.js';
+import { reviewDraftsWithHistory } from './review-history';
 
 export interface CodeDiscussion {
   root: ReviewDiscussion;
@@ -64,6 +65,7 @@ export function sourceDiscussions(
           }
         : undefined;
       const candidates = drafts
+        .flatMap(reviewDraftsWithHistory)
         .filter((draft) => draft.submission?.id === root.reviewId)
         .flatMap((draft) => draft.comments)
         .filter(
@@ -86,6 +88,34 @@ export function sourceDiscussions(
           .sort((a, b) => a.at.localeCompare(b.at)),
       };
     });
+}
+/** Every inline thread of a repository's review, whatever file it is on, by file and line. */
+export function reviewThreads(
+  comments: ReviewDiscussion[],
+  snapshot: Snapshot,
+  drafts: ReviewDraft[] = [],
+): CodeDiscussion[] {
+  const paths = new Set(
+    comments
+      .filter((comment) => comment.repoId === snapshot.repoId && comment.location)
+      .map((comment) => comment.location!.path),
+  );
+  const threads = new Map<string, CodeDiscussion>();
+  for (const path of paths)
+    for (const thread of sourceDiscussions(
+      comments,
+      snapshot,
+      { repoId: snapshot.repoId, side: 'head', path, startLine: 1, endLine: 1 },
+      true,
+      drafts,
+    ))
+      threads.set(thread.root.id, thread);
+  return [...threads.values()].sort(
+    (a, b) =>
+      a.root.location!.path.localeCompare(b.root.location!.path) ||
+      (a.root.location!.line ?? a.root.location!.originalLine ?? 0) -
+        (b.root.location!.line ?? b.root.location!.originalLine ?? 0),
+  );
 }
 export function discussionAtLine(threads: CodeDiscussion[], line: Evidence) {
   return threads.filter(

@@ -1,0 +1,107 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
+import { reviewPoints, selectedReviewRange } from '../shared/review-timeline';
+import {
+  emptyModelResult,
+  type ReviewSession,
+  type Snapshot,
+  type ReviewRevision,
+} from '../shared/model';
+import { ReviewTimeline, timelineSelection } from '../web/layout/ReviewTimeline';
+
+const snapshot = (id: string, headSha = id, baseRef = 'origin/master') =>
+  ({
+    id,
+    repoId: 'repo',
+    repoName: 'Service',
+    headSha,
+    mergeBase: 'base',
+    local: { baseRef },
+    files: [],
+    headFiles: [],
+    baseFiles: [],
+  }) as unknown as Snapshot;
+const revision = (id: string, headSha = id): ReviewRevision =>
+  ({
+    id,
+    savedAt: '2026-11-01T08:00:00Z',
+    snapshots: [snapshot(id, headSha)],
+    drafts: [],
+    run: { id, state: 'complete', result: { ...emptyModelResult(), indexes: [], contracts: [] } },
+  }) as unknown as ReviewRevision;
+const makeSession = (history: ReviewRevision[] = []) =>
+  ({
+    id: 'session',
+    createdAt: '2026-10-29T00:00:00Z',
+    snapshots: [snapshot('latest')],
+    run: null,
+    history,
+  }) as ReviewSession;
+
+describe('review comparison timeline', () => {
+  it('starts with the pinned base, ends at the current code, and defaults to the last reviewed source', () => {
+    const session = makeSession([revision('first'), revision('second')]);
+    const selected = selectedReviewRange(session);
+    expect(selected.points.map((p) => p.id)).toEqual(['base', 'first', 'second', 'current']);
+    expect(selected.from.id).toBe('second');
+    expect(selected.to?.id).toBe('current');
+    expect(selected.points[0].snapshots[0].id).toBe('first');
+    expect(selectedReviewRange(session, 'base', 'first').to?.id).toBe('current');
+  });
+  it('never turns discussion-only reanalysis, empty failures, running jobs or another base into selectable stages', () => {
+    const duplicate = revision('renamed', 'first');
+    const running = revision('running');
+    running.run.state = 'running';
+    const failure = revision('failure');
+    failure.run.state = 'failed';
+    const scope = revision('head-only');
+    scope.snapshots = [snapshot('head-only', 'head-only', 'HEAD')];
+    const session = makeSession([
+      revision('first'),
+      duplicate,
+      running,
+      failure,
+      scope,
+      revision('same-as-current', 'latest'),
+    ]);
+    expect(reviewPoints(session).map((p) => p.id)).toEqual(['base', 'renamed', 'current']);
+    expect(reviewPoints(session)[0].snapshots[0].id).toBe('first');
+    session.threadDiscussion = [];
+    session.discussionRevision = 'new-comments';
+    expect(reviewPoints(session).map((p) => p.id)).toEqual(['base', 'renamed', 'current']);
+  });
+  it('can return to the initial base without an analysis and interprets old version links as a baseline', () => {
+    expect(selectedReviewRange(makeSession()).from.id).toBe('base');
+    const session = makeSession([revision('first'), revision('second')]);
+    expect(selectedReviewRange(session, undefined, 'first').from.id).toBe('first');
+    expect(selectedReviewRange(session, 'unknown').from.id).toBe('second');
+  });
+  it('renders one movable boundary with names above the track and dates below, with no version dropdown', () => {
+    const selected = selectedReviewRange(makeSession([revision('first')]));
+    const html = renderToStaticMarkup(
+      React.createElement(ReviewTimeline, {
+        points: selected.points,
+        from: selected.from.id,
+        onChange: async () => {},
+      }),
+    );
+    expect(html.match(/type="range"/g)).toHaveLength(1);
+    expect(html).not.toContain('<select');
+    expect(html).toContain('Текущая версия');
+    expect(html).toContain('origin/master');
+    expect(html.indexOf('Анализ 1')).toBeLessThan(html.indexOf('type="range"'));
+    expect(html.indexOf('<time')).toBeGreaterThan(html.indexOf('type="range"'));
+  });
+});
+
+it('resets a preview from another review synchronously when the new timeline has fewer points', () => {
+  const old = ['base', 'analysis-1', 'analysis-2', 'review-3', 'current'].map((id) => ({ id }));
+  const oldChoice = timelineSelection(old, 'review-3');
+  expect(oldChoice.index).toBe(3);
+  const short = ['base', 'current'].map((id) => ({ id }));
+  expect(timelineSelection(short, 'base', oldChoice).index).toBe(0);
+  expect(timelineSelection(short, 'missing', oldChoice).index).toBe(0);
+  const current = timelineSelection(short, 'base');
+  expect(timelineSelection(short, 'base', { ...current, index: 5 }).index).toBe(0);
+});

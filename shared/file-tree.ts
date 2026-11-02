@@ -1,4 +1,5 @@
 import type { ChangedFile, Snapshot } from './model.js';
+import { t } from './i18n.js';
 
 /** Head files plus removed files retain a place in the review tree. */
 export function snapshotTreeFiles(snapshot: Snapshot): ChangedFile[] {
@@ -25,11 +26,11 @@ export function snapshotRole(snapshot: Snapshot): string {
   const service = paths.some((path) => /(?:^|\/)src\/main\/.*\.(java|kt)$/i.test(path));
   return protocols
     ? service
-      ? 'Сервис · протоколы'
-      : 'Протоколы'
+      ? t('Service · protocols')
+      : t('Protocols')
     : service
-      ? 'Сервис'
-      : 'Репозиторий';
+      ? t('Service')
+      : t('Repository');
 }
 
 export interface FileTreeNode {

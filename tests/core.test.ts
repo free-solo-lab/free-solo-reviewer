@@ -1,118 +1,19 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import { fixture, FixtureProvider } from './fixtures.js';
-import {
-  createSnapshot,
-  inlineLocation,
-  parsePatch,
-  readSource,
-  safePath,
-} from '../server/repository.js';
-import { indexSnapshot, INDEX_VERSION } from '../server/indexer.js';
+import { parsePatch, readSource, safePath } from '../server/repository.js';
+import { indexSnapshot } from '../server/indexer.js';
 import { extractContracts } from '../server/contracts.js';
 import { decodeModelResult, validateModelResult } from '../server/validation.js';
 import { Store } from '../server/store.js';
-import { GitHubApiError, parseHttpResponse } from '../server/github.js';
-import { ReviewManager } from '../server/review.js';
+import { GitHubApiError, githubErrorMessage, parseHttpResponse } from '../server/github.js';
 import { AnalysisManager } from '../server/analysis.js';
 import { createApp } from '../server/app.js';
-import { codexOptions, buildContext, codexOutputSchema } from '../server/provider.js';
+import { buildContext } from '../server/provider.js';
 import { serviceGroups } from '../shared/graph.js';
 import { emptyModelResult, type ReviewSession } from '../shared/model.js';
-const cleanup: (() => Promise<unknown> | void)[] = [];
-afterEach(async () => {
-  for (const f of cleanup.splice(0).reverse()) await f();
-});
-async function setup() {
-  const f = await fixture();
-  cleanup.push(f.cleanup);
-  const snapshot = await createSnapshot(f.repo, 12, join(f.root, 'snapshots'), f.github);
-  return { ...f, snapshot };
-}
-async function reviewFixture() {
-  const f = await setup();
-  const store = new Store(join(f.root, 'review.sqlite'));
-  cleanup.push(() => store.close());
-  const session: ReviewSession = {
-    id: randomUUID(),
-    title: 'Review',
-    createdAt: new Date().toISOString(),
-    snapshots: [f.snapshot],
-    run: {
-      id: 'run',
-      sessionId: 'session',
-      version: '1',
-      fingerprint: 'hash',
-      state: 'complete',
-      startedAt: new Date().toISOString(),
-      events: [],
-      result: { ...emptyModelResult(), indexes: [], contracts: [] },
-    },
-  };
-  store.saveSession(session);
-  const manager = new ReviewManager(store, f.github);
-  const changed = f.snapshot.files.find((f) => f.path.endsWith('OrderService.java'))!;
-  const evidence = {
-    repoId: f.repo.id,
-    side: 'head' as const,
-    path: changed.path,
-    startLine: changed.addedLines[0],
-    endLine: changed.addedLines[0],
-  };
-  return { ...f, store, session, manager, evidence };
-}
-describe('saved source index upgrades', () => {
-  it('upgrades saved indexes without invoking the provider or changing model results', async () => {
-    const f = await setup();
-    const provider = new FixtureProvider();
-    provider.analyze = async () => {
-      throw new Error('LLM must not run');
-    };
-    const { app, store } = createApp({
-      dataDir: join(f.root, 'upgrade'),
-      github: f.github,
-      provider,
-    });
-    cleanup.push(() => app.close());
-    const oldIndex = await indexSnapshot(f.snapshot, 'head');
-    delete oldIndex.version;
-    const saved: ReviewSession = {
-      id: 'saved',
-      title: 'Saved',
-      createdAt: new Date().toISOString(),
-      snapshots: [f.snapshot],
-      run: {
-        id: 'run',
-        sessionId: 'saved',
-        version: '1',
-        fingerprint: 'cached',
-        state: 'complete',
-        startedAt: new Date().toISOString(),
-        events: [],
-        result: {
-          ...emptyModelResult(),
-          summary: 'Keep this analysis',
-          contracts: [],
-          indexes: [oldIndex],
-        },
-      },
-    };
-    store.saveSession(saved);
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/sessions/saved',
-      headers: { host: '127.0.0.1:4318' },
-    });
-    expect(response.statusCode).toBe(200);
-    const upgraded = response.json<ReviewSession>();
-    expect(upgraded.run?.id).toBe('run');
-    expect(upgraded.run?.result.summary).toBe('Keep this analysis');
-    expect(upgraded.run?.result.indexes[0].version).toBe(INDEX_VERSION);
-    expect(store.session('saved')?.run?.result.indexes[0].version).toBe(INDEX_VERSION);
-  });
-});
+import { cleanup, reviewFixture, setup, waitFor } from './core-fixtures.js';
 describe('snapshot, syntax and source fidelity', () => {
   it('pins merge-base and PR head, preserves checkout, indexes Java and Kotlin, excludes credentials', async () => {
     const f = await setup();
@@ -367,112 +268,6 @@ describe('analysis integrity', () => {
     expect(response.json<ReviewSession>().run).toBeNull();
   });
 });
-describe('review publishing', () => {
-  for (const state of ['cancelled', 'failed', 'running', 'none'] as const)
-    it(`allows manually prepared comments when analysis is ${state}`, async () => {
-      const f = await reviewFixture();
-      if (state === 'none') f.session.run = null;
-      else f.session.run!.state = state;
-      f.manager.save(f.session, f.snapshot, {
-        ...f.manager.get(f.session, f.snapshot),
-        comments: [
-          { id: 'manual', body: 'Manual review comment', evidence: f.evidence, selected: true },
-        ],
-      });
-      expect((await f.manager.publish(f.session, f.snapshot)).state).toBe('submitted');
-      expect(f.github.submissions[0].comments).toHaveLength(1);
-    });
-
-  for (const action of ['COMMENT', 'REQUEST_CHANGES', 'APPROVE'] as const)
-    it(`publishes ${action} with explicit head and correct inline location`, async () => {
-      const f = await reviewFixture();
-      let draft = f.manager.get(f.session, f.snapshot);
-      draft = f.manager.save(f.session, f.snapshot, {
-        ...draft,
-        body: 'Reviewed',
-        action,
-        comments: [{ id: 'c', body: 'Check compensation', evidence: f.evidence, selected: true }],
-      });
-      const published = await f.manager.publish(f.session, f.snapshot);
-      expect(published.state).toBe('submitted');
-      expect(f.github.submissions[0]).toMatchObject({
-        event: action,
-        commit_id: f.pr.headRefOid,
-        comments: [
-          {
-            path: f.evidence.path,
-            line: f.evidence.startLine,
-            side: 'RIGHT',
-            body: 'Check compensation',
-          },
-        ],
-      });
-      await f.manager.publish(f.session, f.snapshot);
-      expect(f.github.submissions).toHaveLength(1);
-    });
-  it('supports LEFT comments, context comments and deselection', async () => {
-    const f = await reviewFixture();
-    const openapi = f.snapshot.files.find((f) => f.path === 'openapi.yaml')!;
-    const ref = {
-      repoId: f.repo.id,
-      side: 'base' as const,
-      path: 'openapi.yaml',
-      startLine: openapi.removedLines[0],
-      endLine: openapi.removedLines[0],
-    };
-    expect(inlineLocation(f.snapshot, ref)?.side).toBe('LEFT');
-    f.manager.save(f.session, f.snapshot, {
-      ...f.manager.get(f.session, f.snapshot),
-      body: 'Review',
-      comments: [
-        { id: 'l', body: 'Removed', evidence: ref, selected: true },
-        { id: 'g', body: 'General', evidence: null, selected: true },
-        { id: 'skip', body: 'Skip', evidence: null, selected: false },
-      ],
-    });
-    await f.manager.publish(f.session, f.snapshot);
-    expect(f.github.submissions[0].comments[0].side).toBe('LEFT');
-    expect(f.github.submissions[0].body).toContain('General');
-    expect(f.github.submissions[0].body).not.toContain('Skip');
-  });
-  it('blocks stale PRs and invalidates self approval', async () => {
-    const f = await reviewFixture();
-    f.manager.save(f.session, f.snapshot, {
-      ...f.manager.get(f.session, f.snapshot),
-      body: 'Review',
-      action: 'APPROVE',
-    });
-    f.github.changed = true;
-    await expect(f.manager.publish(f.session, f.snapshot)).rejects.toThrow('новые коммиты');
-    expect(f.github.submissions).toHaveLength(0);
-    f.github.changed = false;
-    f.github.login = 'author';
-    await expect(f.manager.publish(f.session, f.snapshot)).rejects.toThrow('собственного PR');
-  });
-  it('reconciles accepted request after timeout without duplicate publication', async () => {
-    const f = await reviewFixture();
-    f.manager.save(f.session, f.snapshot, {
-      ...f.manager.get(f.session, f.snapshot),
-      body: 'Review',
-    });
-    f.github.throwAfterSubmit = true;
-    expect((await f.manager.publish(f.session, f.snapshot)).state).toBe('submitted');
-    await f.manager.publish(f.session, f.snapshot);
-    expect(f.github.submissions).toHaveLength(1);
-  });
-  it('persists uncertainty and refuses blind retry when outcome cannot be established', async () => {
-    const f = await reviewFixture();
-    f.manager.save(f.session, f.snapshot, {
-      ...f.manager.get(f.session, f.snapshot),
-      body: 'Review',
-    });
-    f.github.throwBeforeSubmit = true;
-    await expect(f.manager.publish(f.session, f.snapshot)).rejects.toThrow('не подтвердил');
-    expect(f.manager.get(f.session, f.snapshot).state).toBe('uncertain');
-    await expect(f.manager.publish(f.session, f.snapshot)).rejects.toThrow('Результат предыдущей');
-    expect(f.github.submissions).toHaveLength(0);
-  });
-});
 describe('GitHub failure responses', () => {
   it('parses included headers without mixing them into JSON', () => {
     expect(
@@ -483,6 +278,20 @@ describe('GitHub failure responses', () => {
         'HTTP/2.0 422 Unprocessable Entity\nContent-Type: application/json\n\n{"message":"Validation failed"}',
       ).status,
     ).toBe(422);
+  });
+  it("shows GitHub's validation details instead of a bare status text", () => {
+    expect(
+      githubErrorMessage(
+        '{"message":"Unprocessable Entity","errors":["Review Can not approve your own pull request"]}',
+      ),
+    ).toBe('Unprocessable Entity: Review Can not approve your own pull request');
+    expect(
+      githubErrorMessage(
+        '{"message":"Validation Failed","errors":[{"resource":"PullRequestReview","field":"line","code":"invalid"}]}',
+      ),
+    ).toBe('Validation Failed: line: invalid');
+    expect(githubErrorMessage('{"message":"Not Found"}')).toBe('Not Found');
+    expect(githubErrorMessage('<html>')).toBe('GitHub отклонил запрос');
   });
   it('keeps a definitely rejected review editable rather than marking it uncertain', async () => {
     const f = await reviewFixture();
@@ -500,250 +309,3 @@ describe('GitHub failure responses', () => {
     expect(f.manager.get(f.session, f.snapshot).attempt).toBeNull();
   });
 });
-describe('jobs, persistence and local API', () => {
-  it('requires every structured output field and accepts null followUp for initial reviews', () => {
-    const visit = (node: unknown) => {
-      if (!node || typeof node !== 'object') return;
-      const schema = node as Record<string, any>;
-      if (schema.type === 'object') {
-        expect(schema.additionalProperties).toBe(false);
-        expect([...(schema.required ?? [])].sort()).toEqual(Object.keys(schema.properties).sort());
-      }
-      for (const value of Object.values(schema)) {
-        if (Array.isArray(value)) value.forEach(visit);
-        else if (value && typeof value === 'object') {
-          visit(value);
-          Object.values(value).forEach(visit);
-        }
-      }
-    };
-    visit(codexOutputSchema);
-    expect(codexOutputSchema.required).toContain('followUp');
-    expect(codexOutputSchema.required).not.toContain('transactions');
-    expect(codexOutputSchema.properties).not.toHaveProperty('transactions');
-    const { transactions: _legacy, ...current } = emptyModelResult();
-    const raw = { ...current, summary: 'Initial review', followUp: null };
-    const decoded = decodeModelResult(raw);
-    expect(decoded.summary).toBe('Initial review');
-    expect(decoded.followUp).toBeUndefined();
-    expect(decoded.transactions).toEqual([]);
-    expect(decoded.gaps).toEqual([]);
-  });
-  it('excludes legacy transaction reports and reaction metadata from Codex context', async () => {
-    const previous = {
-      ...emptyModelResult(),
-      summary: 'Preserved review',
-      transactions: [
-        {
-          id: 'legacy-tx',
-          title: 'Legacy report',
-          summary: 'x'.repeat(600_000),
-          confidence: 'inferred' as const,
-          evidence: [],
-          propagation: 'REQUIRED',
-          rollback: '',
-          operations: [],
-          unknowns: [],
-        },
-      ],
-    };
-    const context = await buildContext({
-      snapshots: [],
-      indexes: [],
-      followUp: {
-        previousReviewId: 'old',
-        previous,
-        comments: [],
-        reviewBodies: [],
-        changes: [],
-        discussion: [
-          {
-            id: 'inline:1',
-            repoId: 'repo',
-            body: 'The answer matters',
-            author: 'author',
-            url: '',
-            at: '',
-            updatedAt: '',
-            reactions: [{ content: '+1', count: 99, viewerHasReacted: true }],
-          },
-        ],
-        discussionContext: [
-          {
-            id: 'inline:2',
-            repoId: 'repo',
-            body: 'Original question',
-            author: 'reviewer',
-            url: '',
-            at: '',
-            updatedAt: '',
-            reactions: [{ content: 'heart', count: 2 }],
-          },
-        ],
-        gaps: [],
-      },
-    });
-    expect(context.truncated).toBe(false);
-    const data = JSON.parse(context.text);
-    expect(data.followUp.previous).not.toHaveProperty('transactions');
-    expect(data.followUp.previous.summary).toBe('Preserved review');
-    expect(previous.transactions[0].summary).toHaveLength(600_000);
-    expect(data.followUp.discussion[0].body).toBe('The answer matters');
-    expect(data.followUp.discussion[0]).not.toHaveProperty('reactions');
-    expect(data.followUp.discussionContext[0]).not.toHaveProperty('reactions');
-  });
-  it('retries an empty partial run and analyzes again after deleting its saved review', async () => {
-    const f = await reviewFixture();
-    f.session.run = null;
-    const delegate = new FixtureProvider();
-    let calls = 0;
-    const manager = new AnalysisManager(f.store, {
-      id: 'retry-provider',
-      async analyze(...args) {
-        calls++;
-        if (calls === 1) throw new Error('Invalid output schema');
-        expect(args[0].followUp).toBeUndefined();
-        return delegate.analyze(...args);
-      },
-    });
-    manager.start(f.session);
-    await waitFor(() => f.store.session(f.session.id)?.run?.state !== 'running');
-    const partial = f.store.session(f.session.id)!;
-    expect(partial.run?.error).toBe('Invalid output schema');
-    expect(f.store.analysisResult(partial.run!.fingerprint)).toBeUndefined();
-    manager.start(partial);
-    await waitFor(() => f.store.session(f.session.id)?.run?.state !== 'running');
-    const complete = f.store.session(f.session.id)!;
-    expect(complete.run?.state).toBe('complete');
-    expect(complete.run?.result.summary).not.toBe('');
-    expect(complete.history ?? []).toHaveLength(0);
-    expect(calls).toBe(2);
-    manager.start(complete);
-    expect(calls).toBe(2);
-    f.store.deleteSession(complete.id);
-    expect(f.store.analysisResult(complete.run!.fingerprint)).toBeUndefined();
-    const recreated = { ...f.session, id: randomUUID(), run: null };
-    manager.start(recreated);
-    await waitFor(() => f.store.session(recreated.id)?.run?.state !== 'running');
-    expect(calls).toBe(3);
-    expect(f.store.session(recreated.id)?.run?.state).toBe('complete');
-  });
-  it('preserves extracted sections on model failure', async () => {
-    const f = await reviewFixture();
-    f.session.run = null;
-    const manager = new AnalysisManager(f.store, {
-      id: 'failing',
-      async analyze() {
-        throw new Error('Model unavailable');
-      },
-    });
-    manager.start(f.session);
-    await waitFor(() => f.store.session(f.session.id)?.run?.state !== 'running');
-    const run = f.store.session(f.session.id)!.run!;
-    expect(run.state).toBe('partial');
-    expect(run.result.contracts).toHaveLength(1);
-    expect(run.result.database.some((d) => d.kind === 'migration')).toBe(true);
-    expect(run.result.gaps.join()).toContain('Model unavailable');
-    expect(run.error).toBe('Model unavailable');
-    expect(run.events.some((event) => event.message.includes('Ошибка анализа:'))).toBe(true);
-  });
-  it('supports cancellation and restart recovery', async () => {
-    const f = await reviewFixture();
-    f.session.run = null;
-    const manager = new AnalysisManager(f.store, {
-      id: 'cancel',
-      async analyze(_i, signal) {
-        await new Promise((_, reject) => {
-          signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
-          if (signal.aborted) reject(new Error('cancelled'));
-        });
-        return emptyModelResult();
-      },
-    });
-    manager.start(f.session);
-    manager.cancel(f.session.id);
-    await waitFor(() => f.store.session(f.session.id)?.run?.state === 'cancelled');
-    f.session.run!.state = 'running';
-    f.store.saveSession(f.session);
-    f.store.recover();
-    expect(f.store.session(f.session.id)?.run?.state).toBe('failed');
-  });
-  it('runs real Git import → analysis → draft → review through API and rejects cross-origin mutations', async () => {
-    const f = await fixture();
-    cleanup.push(f.cleanup);
-    const { app, store } = createApp({
-      dataDir: join(f.root, 'app'),
-      github: f.github,
-      provider: new FixtureProvider(),
-    });
-    cleanup.push(() => app.close());
-    store.saveRepository(f.repo);
-    const inject = (
-      method: 'GET' | 'POST' | 'PUT',
-      url: string,
-      payload?: unknown,
-      origin?: string,
-    ) =>
-      app.inject({
-        method,
-        url,
-        headers: {
-          host: '127.0.0.1:4318',
-          ...(origin ? { origin } : {}),
-          ...(payload ? { 'content-type': 'application/json' } : {}),
-        },
-        payload: payload === undefined ? undefined : JSON.stringify(payload),
-      });
-    const denied = await inject(
-      'POST',
-      '/api/sessions',
-      { title: 'x', repositories: [] },
-      'https://evil.example',
-    );
-    expect(denied.statusCode).toBe(403);
-    const created = await inject('POST', '/api/sessions', {
-      title: 'Checkout',
-      repositories: [{ repoId: f.repo.id, prNumber: 12 }],
-    });
-    expect(created.statusCode).toBe(200);
-    const session = created.json<ReviewSession>();
-    expect((await inject('POST', `/api/sessions/${session.id}/analyze`, {})).statusCode).toBe(200);
-    await waitFor(() => store.session(session.id)?.run?.state !== 'running');
-    expect(store.session(session.id)?.run?.state).toBe('complete');
-    const draft = (await inject('GET', `/api/sessions/${session.id}/drafts`)).json<
-      ReturnType<Store['drafts']>
-    >()[0];
-    expect(
-      (
-        await inject('PUT', `/api/sessions/${session.id}/drafts/${draft.snapshotId}`, {
-          ...draft,
-          body: 'Test review',
-        })
-      ).statusCode,
-    ).toBe(200);
-    expect(
-      (
-        await inject('POST', `/api/sessions/${session.id}/drafts/${draft.snapshotId}/submit`, {})
-      ).json().state,
-    ).toBe('submitted');
-    expect(f.github.submissions).toHaveLength(1);
-  });
-  it('Codex environment has no GitHub tokens or inherited connectors', () => {
-    const old = process.env.GH_TOKEN;
-    process.env.GH_TOKEN = 'super-secret';
-    const config = codexOptions('/tmp/isolated');
-    expect(config.options.env?.GH_TOKEN).toBeUndefined();
-    expect(config.options.env?.HOME).toBe('/tmp/isolated');
-    expect(config.options.config?.features).toEqual({ shell_tool: false, multi_agent: false });
-    expect(config.thread.networkAccessEnabled).toBe(false);
-    if (old) process.env.GH_TOKEN = old;
-    else delete process.env.GH_TOKEN;
-  });
-});
-async function waitFor(condition: () => boolean) {
-  const until = Date.now() + 10000;
-  while (!condition()) {
-    if (Date.now() > until) throw new Error('Timed out');
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}

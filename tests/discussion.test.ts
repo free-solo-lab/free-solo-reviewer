@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { sourceDiscussions, discussionAtLine } from '../shared/discussion-threads';
+import { sourceDiscussions, discussionAtLine, reviewThreads } from '../shared/discussion-threads';
 import type {
   Evidence,
   ReviewDiscussion,
@@ -62,6 +62,30 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 describe('GitHub inline discussion threads', () => {
+  it('collects the threads of every file of a review with their replies, by file and line', () => {
+    const other = {
+      ...root,
+      id: 'inline:20',
+      body: 'Rename',
+      location: { ...root.location!, path: 'Api.java', line: 5 },
+    };
+    const outdated = {
+      ...root,
+      id: 'inline:30',
+      body: 'Old',
+      location: { ...root.location!, line: null, originalLine: 3 },
+    };
+    const general = { ...root, id: 'comment:1', location: undefined };
+    const threads = reviewThreads([root, response, other, outdated, general], snap);
+    expect(threads.map((thread) => thread.root.id)).toEqual([
+      'inline:20',
+      'inline:30',
+      'inline:10',
+    ]);
+    expect(threads[2].replies.map((reply) => reply.id)).toEqual(['inline:11']);
+    expect(threads[1].evidence).toBeUndefined();
+    expect(reviewThreads([root], { ...snap, repoId: 'elsewhere' })).toEqual([]);
+  });
   it('renders the reply under its question inside code and retains a reply editor', () => {
     const threads = sourceDiscussions([root, response], snap, origin, true);
     const html = renderToStaticMarkup(
@@ -101,6 +125,24 @@ describe('GitHub inline discussion threads', () => {
     expect(current).toHaveLength(1);
     expect(current[0].replies.map((reply) => reply.body)).toEqual(['Fixed', 'Thanks']);
     expect(current[0].localCommentId).toBe('local');
+    const continued = {
+      ...draft,
+      submission: null,
+      comments: [],
+      published: [
+        {
+          snapshotId: snap.id,
+          headSha: snap.headSha,
+          action: 'COMMENT' as const,
+          body: '',
+          comments: draft.comments,
+          submission: { id: 42, url: 'https://github.com/review/42', at: '2026-10-27T00:00:00Z' },
+        },
+      ],
+    };
+    expect(sourceDiscussions(comments, snap, origin, true, [continued])[0].localCommentId).toBe(
+      'local',
+    );
     expect(discussionAtLine(current, { ...origin, startLine: 20 })).toHaveLength(1);
     const historical = sourceDiscussions(comments, { ...snap, headSha: 'old' }, origin, false);
     expect(historical[0].evidence?.endLine).toBe(10);
@@ -138,6 +180,7 @@ describe('GitHub inline discussion threads', () => {
           original_line: 10,
           commit_id: 'old',
           original_commit_id: 'old',
+          diff_hunk: '@@ -1,2 +1,2 @@\n-old()\n+run()',
         };
         return (
           options
@@ -153,6 +196,7 @@ describe('GitHub inline discussion threads', () => {
     expect(rows[0]).toMatchObject({
       reviewId: 42,
       location: { path: 'Service.java', side: 'head', line: 20, originalLine: 10 },
+      diffHunk: '@@ -1,2 +1,2 @@\n-old()\n+run()',
     });
     expect(await github.reply('org/repo', 1, 10, 'Answer')).toMatchObject({
       id: 'inline:11',

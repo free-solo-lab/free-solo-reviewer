@@ -1,0 +1,144 @@
+.page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.history {
+  width: var(--menu-w);
+  flex-shrink: 0;
+  overflow: auto;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border);
+  background: #f7f7f7;
+}
+.history h1 {
+  margin: 8px 10px 18px;
+  font-size: 16px;
+}
+.history input {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.history button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  text-align: left;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  margin-bottom: 4px;
+}
+.history button[aria-pressed='true'] {
+  background: #f0f0f0;
+  border-color: var(--border);
+}
+.history strong {
+  font-size: 13px;
+}
+.history small,
+.history span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: 24px;
+  overflow: auto;
+}
+.content h2 {
+  margin: 0 0 8px;
+}
+.content p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.summary div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.summary small {
+  color: var(--muted);
+}
+.summary strong {
+  font-size: 21px;
+}
+.note {
+  padding: 12px;
+  background: #f2f2f2;
+  border-radius: 8px;
+}
+.stage {
+  margin: 12px 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.stage summary {
+  cursor: pointer;
+  line-height: 1.7;
+}
+.stage summary span {
+  margin-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.table {
+  overflow: auto;
+  margin-top: 12px;
+}
+.table table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+}
+.table td,
+.table th {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.table small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.table .error {
+  color: #b64d35;
+  overflow-wrap: anywhere;
+  max-width: 300px;
+}
+@media (max-width: 760px) {
+  .page {
+    flex-direction: column;
+    overflow: auto;
+  }
+  .history {
+    width: 100%;
+    max-height: 240px;
+    border-bottom: 1px solid var(--border);
+  }
+  .content {
+    overflow: visible;
+    padding: 16px;
+  }
+}

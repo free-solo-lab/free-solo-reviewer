@@ -1,96 +1,156 @@
 import { useState } from 'react';
 import type { Snapshot } from '../shared/model';
-import type { DatabaseSchema } from '../shared/database-schema';
+import { databaseServiceId, type DatabaseSchema } from '../shared/database-schema';
+import { t, tc } from '../shared/i18n';
 
-const status = { added: 'Добавлен', modified: 'Изменён', removed: 'Удалён', unchanged: '' };
+const status = {
+  added: tc('migration', 'Added'),
+  modified: tc('migration', 'Modified'),
+  removed: tc('migration', 'Removed'),
+  unchanged: '',
+};
 export function DatabaseMigrationsMenu({
   snapshots,
-  schema,
+  schemas,
+  selectedServiceId,
   selectedPath,
-  onRepo,
   onSelect,
 }: {
   snapshots: Snapshot[];
-  schema?: DatabaseSchema;
+  schemas: DatabaseSchema[];
+  selectedServiceId: string;
   selectedPath: string;
-  onRepo: (id: string) => void;
-  onSelect: (path: string) => void;
+  onSelect: (repoId: string, path: string) => void;
 }) {
   const [search, setSearch] = useState('');
-  const migrations = (schema?.migrations ?? []).filter((migration) =>
-    `${migration.path} ${migration.effects.map((effect) => effect.table).join(' ')}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const query = search.trim().toLowerCase();
+  // Each service owns its schema and paths: Flyway filenames often repeat across services.
+  const available: DatabaseSchema[] = schemas.length
+    ? schemas
+    : snapshots.map((s) => ({
+        snapshotId: s.id,
+        repoId: s.repoId,
+        repoName: s.repoName,
+        headSha: s.headSha,
+        baseSha: s.mergeBase,
+        tables: [],
+        warnings: [],
+      }));
+  const groups = available
+    .map((schema) => {
+      const id = databaseServiceId(schema),
+        name = schema.serviceName ?? schema.repoName;
+      const matchesService = `${name} ${schema.repoName} ${schema.serviceDir ?? ''}`
+        .toLowerCase()
+        .includes(query);
+      const migrations = (schema.migrations ?? []).filter(
+        (m) =>
+          m.change !== 'unchanged' &&
+          (matchesService ||
+            `${m.path} ${m.effects.map((e) => e.table).join(' ')}`.toLowerCase().includes(query)),
+      );
+      return { id, name, schema, migrations, matchesService };
+    })
+    .filter((group) => group.migrations.length > 0);
+  const count = groups.reduce((total, group) => total + group.migrations.length, 0);
   return (
     <aside
       className="secondary-menu database-migrations-menu"
-      aria-label="Меню миграций базы данных"
+      aria-label={t('Database migrations menu')}
     >
       <div className="tests-menu-heading">
-        <h2>Миграции</h2>
-        <span>{migrations.length}</span>
+        <h2>{t('Migrations')}</h2>
+        <span>{count}</span>
       </div>
       <div className="tests-filter">
         <input
-          aria-label="Поиск миграции"
-          placeholder="Найти скрипт или таблицу…"
+          aria-label={t('Search migrations')}
+          placeholder={t('Find a service, script or table…')}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
-        {snapshots.length > 1 && (
-          <select
-            aria-label="Сервис базы данных"
-            value={schema?.repoId ?? snapshots[0]?.repoId ?? ''}
-            onChange={(event) => onRepo(event.target.value)}
-          >
-            {snapshots.map((snapshot) => (
-              <option key={snapshot.repoId} value={snapshot.repoId}>
-                {snapshot.repoName}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
-      <nav className="scenario-menu-list" aria-label="SQL-скрипты">
-        <button
-          className={!selectedPath ? 'active' : ''}
-          aria-current={!selectedPath ? 'page' : undefined}
-          onClick={() => onSelect('')}
-        >
-          Вся схема
-        </button>
-        {migrations.map((migration) => (
-          <button
-            key={migration.path}
-            title={migration.path}
-            className={`migration-menu-item ${selectedPath === migration.path ? 'active' : ''}`}
-            aria-current={selectedPath === migration.path ? 'page' : undefined}
-            onClick={() => onSelect(migration.path)}
-          >
-            <span className="migration-menu-meta">
-              <span>
-                {migration.kind === 'repeatable'
-                  ? 'Repeatable'
-                  : migration.version
-                    ? `V${migration.version}`
-                    : 'SQL'}
-              </span>
-              {migration.change !== 'unchanged' && (
-                <small className={migration.change}>{status[migration.change]}</small>
+      <nav className="scenario-menu-list" aria-label={t('SQL scripts')}>
+        {groups.map(({ id: repoId, name, schema, migrations }) => {
+          const expanded = !!query || !collapsed.has(repoId);
+          const active = selectedServiceId === repoId;
+          return (
+            <section className="database-service-group" key={repoId} aria-label={name}>
+              <button
+                type="button"
+                className="database-service-toggle"
+                aria-expanded={expanded}
+                aria-controls={`database-service-${repoId}`}
+                onClick={() =>
+                  setCollapsed((current) => {
+                    const next = new Set(current);
+                    if (next.has(repoId)) next.delete(repoId);
+                    else next.add(repoId);
+                    return next;
+                  })
+                }
+              >
+                <span className="database-service-chevron" aria-hidden="true">
+                  {expanded ? '▾' : '▸'}
+                </span>
+                <strong
+                  title={schema.serviceDir ? `${schema.repoName} · ${schema.serviceDir}` : name}
+                >
+                  {name}
+                </strong>
+                <small>{migrations.length}</small>
+              </button>
+              {expanded && (
+                <div className="database-service-items" id={`database-service-${repoId}`}>
+                  <button
+                    data-menu-item
+                    className={active && !selectedPath ? 'active' : ''}
+                    aria-current={active && !selectedPath ? 'page' : undefined}
+                    onClick={() => onSelect(repoId, '')}
+                  >
+                    {tc('menu', 'Database schema')}
+                  </button>
+                  {migrations.map((migration) => {
+                    const selected = active && selectedPath === migration.path;
+                    return (
+                      <button
+                        key={migration.path}
+                        data-menu-item
+                        title={migration.path}
+                        className={`migration-menu-item menu-change-item ${selected ? 'active' : ''}`}
+                        aria-current={selected ? 'page' : undefined}
+                        onClick={() => onSelect(repoId, migration.path)}
+                      >
+                        <span className="migration-menu-meta">
+                          <span>
+                            {migration.kind === 'repeatable'
+                              ? 'Repeatable'
+                              : migration.version
+                                ? `V${migration.version}`
+                                : 'SQL'}
+                          </span>
+                        </span>
+                        <strong>
+                          {migration.name
+                            .replace(/^(?:V[\d._]+|R)__|\.sql$/gi, '')
+                            .replace(/_/g, ' ')}
+                        </strong>
+                        <small>{migration.name}</small>
+                        <span
+                          className={`review-revision-dot ${migration.change}`}
+                          title={t('{0} in PR', status[migration.change])}
+                          aria-label={t('{0} in PR', status[migration.change])}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </span>
-            <strong>
-              {migration.name.replace(/^(?:V[\d._]+|R)__|\.sql$/gi, '').replace(/_/g, ' ')}
-            </strong>
-            <small>{migration.name}</small>
-          </button>
-        ))}
-        {!migrations.length && (
-          <p className="tests-menu-empty">
-            {search ? 'Скрипты не найдены' : 'SQL-миграции не найдены'}
-          </p>
-        )}
+            </section>
+          );
+        })}
+        {!groups.length && <p className="tests-menu-empty">{t('No scripts found')}</p>}
       </nav>
     </aside>
   );

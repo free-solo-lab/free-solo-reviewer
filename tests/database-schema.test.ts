@@ -207,6 +207,23 @@ describe('database schema from pinned DDL', () => {
     expect(result.warnings).toHaveLength(2);
     expect(schemaPositions([]).width).toBeGreaterThan(0);
   });
+  it('wraps unrelated tables into rows of four and keeps linked tables together', () => {
+    const { tables } = parse(
+      [
+        ...Array.from({ length: 9 }, (_, i) => `CREATE TABLE t${i} (id bigint PRIMARY KEY);`),
+        'CREATE TABLE parent (id bigint PRIMARY KEY);',
+        'CREATE TABLE child (id bigint PRIMARY KEY, parent_id bigint REFERENCES parent(id));',
+      ].join('\n'),
+    );
+    const { positions } = schemaPositions(tables);
+    const rows = [...new Set([...positions.values()].map((point) => point.y))];
+    const columns = new Set([...positions.values()].map((point) => point.x));
+    expect(columns.size).toBe(4);
+    expect(rows.length).toBe(3);
+    // The pair wraps as one group: the child stays right of its parent in the same row.
+    expect(positions.get('child')!.y).toBe(positions.get('parent')!.y);
+    expect(positions.get('child')!.x).toBeGreaterThan(positions.get('parent')!.x);
+  });
   it('serves the selected snapshot without invoking Codex or requiring an analysis', async () => {
     const f = await fixture();
     cleanup.push(f.cleanup);

@@ -1,4 +1,25 @@
-import type { Evidence, IndexedMethod, SourceIndex } from './model.js';
+import type { Evidence, IndexedMethod, IndexedType, SourceIndex, Snapshot } from './model.js';
+import { directlyChanged } from './analysis-scope.js';
+
+/** PR markers use the selected snapshot's diff, not changes to generated analysis text. */
+export function definitionReviewChange(method: IndexedMethod, snapshots: Snapshot[]) {
+  const file = snapshots
+    .find((snapshot) => snapshot.repoId === method.evidence.repoId)
+    ?.files.find(
+      (file) =>
+        (method.evidence.side === 'head' ? file.path : (file.oldPath ?? file.path)) ===
+        method.evidence.path,
+    );
+  if (!file || file.status === 'unchanged') return undefined;
+  return {
+    scope: directlyChanged(method, snapshots) ? ('method' as const) : ('file' as const),
+    kind: /^(A|added)$/.test(file.status)
+      ? 'added'
+      : /^(D|deleted|removed)$/.test(file.status)
+        ? 'removed'
+        : 'modified',
+  };
+}
 export interface MethodLink {
   start: number;
   end: number;
@@ -12,6 +33,108 @@ const stem = (path: string) =>
     .split('/')
     .pop()!
     .replace(/\.(java|kt)$/, '');
+
+type DefinitionGraph = {
+  indexes: SourceIndex[];
+  edges: string[][];
+  methods: IndexedMethod[];
+  results: Map<IndexedMethod, IndexedMethod[]>;
+};
+const graphs = new WeakMap<SourceIndex, DefinitionGraph>();
+function definitionGraph(scoped: SourceIndex[]): DefinitionGraph {
+  const cached = graphs.get(scoped[0]);
+  if (
+    cached &&
+    cached.indexes.length === scoped.length &&
+    cached.indexes.every((index, i) => index === scoped[i])
+  )
+    return cached;
+  const types = scoped.flatMap((i) => i.types ?? []);
+  const resolve = (name: string, child: IndexedType) => {
+    const imported = child.imports.find((i) => i.endsWith(`.${name}`));
+    const qualified =
+      imported ??
+      `${child.qualifiedName.slice(0, child.qualifiedName.lastIndexOf('.') + 1)}${name}`;
+    const candidates = types.filter(
+      (t) => t.qualifiedName === name || t.qualifiedName === qualified,
+    );
+    if (candidates.length === 1) return candidates[0];
+    const wildcard = types.filter((t) =>
+      child.imports.some((i) => i.endsWith('.*') && `${i.slice(0, -1)}${name}` === t.qualifiedName),
+    );
+    return wildcard.length === 1 ? wildcard[0] : undefined;
+  };
+  const edges = types.flatMap((t) =>
+    t.parents.flatMap((p) => {
+      const parent = resolve(p, t);
+      return parent ? [[t.qualifiedName, parent.qualifiedName]] : [];
+    }),
+  );
+  const graph: DefinitionGraph = {
+    indexes: scoped,
+    edges,
+    methods: scoped.flatMap((i) => i.methods),
+    results: new Map(),
+  };
+  graphs.set(scoped[0], graph);
+  return graph;
+}
+
+/** Declaration and implementations from the same frozen repository version. */
+export function methodDefinitions(method: IndexedMethod, indexes: SourceIndex[]): IndexedMethod[] {
+  if (!method.owner) return [method];
+  const scoped = indexes.filter(
+    (i) => i.repoId === method.evidence.repoId && i.side === method.evidence.side,
+  );
+  if (!scoped.length) return [method];
+  const graph = definitionGraph(scoped);
+  const cached = graph.results.get(method);
+  if (cached) return cached;
+  const { edges } = graph;
+  // Start with ancestors, then include their descendants (sibling implementations).
+  const roots = new Set([method.owner]);
+  let size = -1;
+  while (size !== roots.size) {
+    size = roots.size;
+    for (const [child, parent] of edges) if (roots.has(child)) roots.add(parent);
+  }
+  size = -1;
+  while (size !== roots.size) {
+    size = roots.size;
+    for (const [child, parent] of edges) if (roots.has(parent)) roots.add(child);
+  }
+  const candidates = graph.methods.filter(
+    (m) => m.name === method.name && m.owner && roots.has(m.owner),
+  );
+  const result = candidates.length ? candidates : [method];
+  graph.results.set(method, result);
+  return result;
+}
+
+export function evidenceMethodLink(evidence: Evidence, indexes: SourceIndex[]): MethodLink | null {
+  const methods = indexes
+    .filter((i) => i.repoId === evidence.repoId && i.side === evidence.side)
+    .flatMap((i) => i.methods);
+  const exact = methods.filter(
+    (m) =>
+      m.evidence.path === evidence.path &&
+      m.evidence.startLine === evidence.startLine &&
+      m.evidence.endLine === evidence.endLine,
+  );
+  if (exact.length !== 1) return null;
+  const method = exact[0];
+  const targets = methodDefinitions(method, indexes);
+  return targets.length > 1
+    ? {
+        start: 0,
+        end: 0,
+        name: method.name,
+        line: evidence.startLine,
+        targets,
+        requiresChoice: true,
+      }
+    : null;
+}
 
 /** Resolve only within the pinned repository and code side. Ambiguity is kept for the picker. */
 export function methodLinks(
@@ -46,8 +169,19 @@ export function methodLinks(
         if (sameFile.length && receiver !== 'super') targets = sameFile;
         else requiresChoice = true;
       } else {
+        const receiverTypes = [
+          ...new Set(
+            calls
+              .filter((c) => c.receiver.replace(/^this\./, '') === receiver)
+              .map((c) => c.receiverType)
+              .filter(Boolean),
+          ),
+        ];
+        const receiverType = receiverTypes.length === 1 ? receiverTypes[0] : receiver;
         const typedName = targets.filter(
-          (m) => stem(m.evidence.path).toLowerCase() === receiver.toLowerCase(),
+          (m) =>
+            (m.owner?.split('.').at(-1) ?? stem(m.evidence.path)).toLowerCase() ===
+            receiverType?.split('.').at(-1)?.toLowerCase(),
         );
         if (typedName.length) targets = typedName;
         else {
@@ -62,7 +196,7 @@ export function methodLinks(
           end: match.index! + name.length,
           name,
           line: row + 1,
-          targets,
+          targets: [...new Set(targets.flatMap((m) => methodDefinitions(m, indexes)))],
           requiresChoice,
         });
     }

@@ -63,9 +63,127 @@ describe('scenario changes since reviewed version', () => {
       [],
       { current: [root], previous: [root] },
       fingerprints,
-    ).get('new-id')!;
-    expect(delta.previous?.id).toBe(previous.id);
-    expect(delta.steps.size).toBe(0);
+    );
+    expect(delta.size).toBe(0);
+  });
+  it('ignores regenerated titles and summaries even without a source catalog', () => {
+    expect(
+      scenarioChanges(
+        [{ ...scenario, title: 'Another name', summary: 'Rewritten prose' }],
+        [scenario],
+      ).size,
+    ).toBe(0);
+  });
+  it('matches regenerated IDs by an unambiguous call sequence when entry evidence is missing', () => {
+    const current = { ...scenario, id: 'regenerated', title: 'Reworded', summary: 'New prose' };
+    expect(scenarioChanges([current], [scenario]).size).toBe(0);
+    expect(
+      scenarioChanges([current], [scenario, { ...scenario, id: 'another' }]).get(current.id)?.kind,
+    ).toBe('added');
+  });
+  it('recognises the entry despite broad references to adjacent entries and shared callees', () => {
+    const root = (name: string, line: number) => ({
+      id: `repo:Handler.java:${name}`,
+      name: `Handler.${name}`,
+      evidence: { ...ref, path: 'Handler.java', startLine: line, endLine: line + 5 },
+      anchors: [ref],
+      paths: [ref.path],
+    });
+    const download = root('download', 10),
+      get = root('get', 20);
+    const old = {
+      ...scenario,
+      id: 'old-download',
+      title: 'Download old',
+      steps: [
+        { ...step('a', 'Handler.download -> Service.save'), evidence: [download.evidence, ref] },
+      ],
+    };
+    const current = {
+      ...old,
+      id: 'new-download',
+      title: 'New download title',
+      summary: 'New prose',
+      steps: [
+        {
+          ...step('new-a', 'Handler.download -> Service.save'),
+          evidence: [{ ...download.evidence, endLine: 25 }, ref],
+        },
+      ],
+    };
+    const other = {
+      ...scenario,
+      id: 'get',
+      steps: [{ ...step('g', 'Handler.get -> Service.save'), evidence: [get.evidence, ref] }],
+    };
+    const roots = { previous: [download, get], current: [download, get] };
+    const fingerprints = { previous: () => 'same-call', current: () => 'same-call' };
+    expect(scenarioChanges([current, other], [old, other], [], roots, fingerprints).size).toBe(0);
+    const change = [
+      {
+        repoId: 'repo',
+        fromSha: 'old',
+        toSha: 'new',
+        files: [{ path: ref.path, status: 'M', patch: '', addedLines: [11], removedLines: [] }],
+      },
+    ];
+    const delta = scenarioChanges([current, other], [old, other], change, roots, fingerprints).get(
+      'new-download',
+    )!;
+    expect(delta.kind).toBe('modified');
+    expect(delta.previous?.id).toBe('old-download');
+  });
+  it('does not mark added detail or an existing entry discovered by a later analysis as new code', () => {
+    const root = {
+      id: 'entry',
+      name: 'Service.save',
+      evidence: ref,
+      anchors: [ref],
+      paths: [ref.path],
+    };
+    const roots = { current: [root], previous: [root] };
+    const fingerprints = {
+      current: (s: Scenario['steps'][number]) => s.label,
+      previous: (s: Scenario['steps'][number]) => s.label,
+    };
+    const detailed = { ...scenario, steps: [...scenario.steps, step('detail', 'Extra detail')] };
+    expect(scenarioChanges([detailed], [scenario], [], roots, fingerprints).size).toBe(0);
+    expect(scenarioChanges([detailed], [], [], roots, fingerprints).size).toBe(0);
+    expect(
+      scenarioChanges([detailed], [], [], { ...roots, previous: [] }, fingerprints).get('flow')
+        ?.kind,
+    ).toBe('added');
+  });
+  it('does not highlight newly generated detail in unchanged methods when a different step changed', () => {
+    const root = {
+      id: 'entry',
+      name: 'Service.save',
+      evidence: ref,
+      anchors: [ref],
+      paths: [ref.path],
+    };
+    const roots = { current: [root], previous: [root] };
+    const fingerprints = {
+      current: (s: Scenario['steps'][number]) => s.label,
+      previous: (s: Scenario['steps'][number]) => s.label,
+    };
+    const extra = {
+      ...step('new-detail', 'Converter.convert'),
+      evidence: [{ ...ref, path: 'Converter.java' }],
+    };
+    const updated = { ...scenario, steps: [scenario.steps[0], extra] };
+    const changes = [
+      {
+        repoId: 'repo',
+        fromSha: 'old',
+        toSha: 'new',
+        files: [{ path: ref.path, status: 'M', patch: '', addedLines: [11], removedLines: [] }],
+      },
+    ];
+    const delta = scenarioChanges([updated], [scenario], changes, roots, fingerprints).get('flow')!;
+    expect(delta.kind).toBe('modified');
+    expect(delta.steps.get('a')).toBe('modified');
+    expect(delta.steps.has('new-detail')).toBe(false);
     expect(delta.removed).toEqual([]);
   });
   it('highlights deletion-only fixes but never treats merge-base coordinates as previous-head coordinates', () => {

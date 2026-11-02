@@ -1,7 +1,7 @@
 import type { ReviewReaction } from './reactions.js';
 import { z } from 'zod';
 
-export const ANALYZER_VERSION = '0.1.0';
+export const ANALYZER_VERSION = '0.4.0-review-workflow';
 export const SQL_ANALYSIS_VERSION = 'codex-sql-1';
 export const TEST_ANALYSIS_VERSION = 'codex-tests-1';
 export const sideSchema = z.enum(['base', 'head']);
@@ -33,6 +33,7 @@ export const scenarioSchema = z.object({
       from: z.string(),
       to: z.string(),
       label: z.string(),
+      description: z.string().optional(),
       kind: z.enum(['call', 'return', 'event', 'database']),
       change: z.enum(['added', 'removed', 'modified', 'unchanged', 'unknown']),
       branch: z.string(),
@@ -130,13 +131,59 @@ export type Confidence = z.infer<typeof confidenceSchema>;
 export type Side = z.infer<typeof sideSchema>;
 export type ReviewAction = 'COMMENT' | 'REQUEST_CHANGES' | 'APPROVE';
 
+/** Branch names of a repository, most recently changed first. */
+export interface RepositoryBranches {
+  /** The checked-out branch: the one a local review reads; null on a detached HEAD. */
+  current: string | null;
+  local: string[];
+  remote: string[];
+}
 export interface Repository {
+  defaultLocalBase?: string;
   id: string;
   path: string;
   name: string;
   slug: string;
+  /** The `gh` account that acts on this repository; without it, the active `gh` account. */
+  githubUser?: string;
 }
+/** GitHub accounts `gh` is logged in to on github.com. */
+export interface GitHubAccounts {
+  active: string | null;
+  accounts: string[];
+  /** Reviewer's current user: chosen in the app, otherwise the active `gh` account. */
+  current?: string | null;
+}
+/** An open pull request that asks the current user, or one of their teams, for a review. */
+export interface ReviewRequest {
+  slug: string;
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  updatedAt: string;
+  draft: boolean;
+  /** Requested from the user personally rather than through a team. */
+  direct: boolean;
+  /** The connected local repository with this remote, if any. */
+  repoId?: string;
+}
+/** Adding a `gh` account from the app: the device code to confirm on github.com and the outcome. */
+export type GitHubLoginState =
+  | { state: 'idle' }
+  | { state: 'waiting'; code: string; url: string }
+  | { state: 'done'; login: string }
+  | { state: 'failed'; error: string };
+/** How the analysis reaches Codex: a saved `codex login`, or the server's OPENAI_API_KEY. */
+export type CodexAuth = 'login' | 'api-key' | null;
+export type CodexLoginState =
+  | { state: 'idle' }
+  | { state: 'waiting'; code: string; url: string }
+  | { state: 'done' }
+  | { state: 'failed'; error: string };
+export const GITHUB_LOGIN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 export interface PullRequest {
+  state?: 'open' | 'closed' | 'merged';
   number: number;
   title: string;
   url: string;
@@ -156,6 +203,25 @@ export interface ChangedFile {
   removedLines: number[];
 }
 export interface Snapshot {
+  /** Reviewable source content, independent of commit parents and publication transport. */
+  contentHash?: string;
+  baseContentHash?: string;
+  reviewLineage?: string;
+  /** Unpublished working source attached to an existing PR. */
+  working?: Snapshot['local'];
+  /** Equivalent local checkout preserved across explicit publication. */
+  workspaceHead?: string;
+  /** Read-only comparison view: the underlying immutable snapshot, used by drafts. */
+  reviewSnapshotId?: string;
+  reviewBase?: { snapshotId: string; revisionId: string };
+  local?: {
+    branchName?: string;
+    baseRef: string;
+    baseCommit: string;
+    headCommit: string;
+    fingerprint: string;
+    gitDir: string;
+  };
   id: string;
   repoId: string;
   repoName: string;
@@ -171,6 +237,7 @@ export interface Snapshot {
   headDir: string;
 }
 export interface IndexedMethod {
+  owner?: string;
   name: string;
   signature: string;
   annotations: string[];
@@ -180,6 +247,7 @@ export interface IndexedMethod {
   programmaticTransactions?: ProgrammaticTransaction[];
 }
 export interface IndexedCall {
+  receiverType?: string;
   name: string;
   receiver: string;
   evidence: Evidence;
@@ -195,6 +263,7 @@ export interface ProgrammaticTransaction {
   nested: boolean;
 }
 export interface SourceIndex {
+  types?: IndexedType[];
   version?: string;
   repoId: string;
   side: Side;
@@ -202,7 +271,17 @@ export interface SourceIndex {
   errors: string[];
   filesIndexed: number;
 }
+export interface IndexedType {
+  name: string;
+  qualifiedName: string;
+  kind: 'interface' | 'class';
+  parents: string[];
+  imports: string[];
+  evidence: Evidence;
+}
 export interface Contract {
+  format?: 'openapi' | 'openapi-fragment' | 'thrift' | 'protobuf' | 'graphql' | 'antlr';
+  source?: { before: string | null; after: string | null; patch: string };
   id: string;
   repoId: string;
   path: string;
@@ -213,14 +292,81 @@ export interface Contract {
   changes: string[];
   evidence: Evidence[];
   error?: string;
+  /** Where the contract is built and which modules build against it. */
+  build?: ContractBuild;
+}
+export type BuildTool = 'gradle' | 'maven' | 'npm' | 'go' | 'cargo' | 'bazel' | 'dotnet' | 'python';
+export interface BuildModule {
+  repoId: string;
+  /** Module directory relative to the repository root; empty for the root module. */
+  dir: string;
+  name: string;
+  tool: BuildTool;
+  evidence: Evidence;
+}
+export interface ContractBuild {
+  /** The module that owns the contract file, or null when no build file encloses it. */
+  module: BuildModule | null;
+  /** Code generators configured for the contract in its module. */
+  generators: string[];
+  /** Modules that read the contract file, depend on its module, or depend on such a module. */
+  consumers: (BuildModule & {
+    via: 'path' | 'dependency' | 'transitive';
+    /** For a transitive dependency: the module it builds with. */
+    through?: string;
+    generators: string[];
+  })[];
+}
+export const changeKinds = [
+  'logic',
+  'refactor',
+  'performance',
+  'concurrency',
+  'transaction',
+  'data',
+  'contract',
+  'config',
+  'cosmetic',
+] as const;
+/** A short definition of one changed method or file, written once per distinct change. */
+export interface ChangeCard {
+  id: string;
+  name: string;
+  evidence: Evidence;
+  kind: (typeof changeKinds)[number];
+  risk: 'none' | 'check' | 'high';
+  text: string;
+  /** Describes what the user sees: a change of the user interface. */
+  ui?: boolean;
 }
 export interface AnalysisResult extends ModelResult {
+  pendingDescriptions?: {
+    id: string;
+    title: string;
+    section: string;
+    summary?: string;
+    revisionId: string;
+    evidence: Evidence[];
+  }[];
+  /** Per-change definitions made before the review; absent for reviews made before them. */
+  changes?: ChangeCard[];
   testAnalysisVersion?: string;
   sqlAnalysisVersion?: string;
   contracts: Contract[];
   indexes: SourceIndex[];
+  /** Stored and API form: keys of the immutable index store; `indexes` is then empty. */
+  indexRefs?: string[];
 }
 export interface AnalysisRun {
+  sourceChanges?: ReviewUpdate['changes'];
+  conversation?: { home: string };
+  messages?: { id: string; at: string; text: string }[];
+  usage?: { input: number; cached: number; output: number };
+  checkpoint?: {
+    stage: 'prepare' | 'review' | 'scenarios' | 'tests' | 'sql' | 'done';
+    coreIncomplete?: boolean;
+    pending?: AnalysisModelCheckpoint;
+  };
   id: string;
   sessionId: string;
   version: string;
@@ -235,14 +381,33 @@ export interface AnalysisRun {
   sqlBaseState?: 'complete' | 'partial';
   testsBaseState?: 'complete' | 'partial';
   scenariosBaseState?: 'complete' | 'partial';
+  /** Optional stages switched off in the settings when this run reached them. */
+  skippedSteps?: import('./analysis-steps.js').OptionalStep[];
   error?: string;
+}
+export interface AnalysisModelCheckpoint {
+  keyVersion?: 2;
+  promptOverrides?: import('./prompt-templates.js').PromptOverrides;
+  key: string;
+  home?: string;
+  threadId?: string;
+  result?: ModelResult;
+  testTargets?: IndexedMethod[];
+  sqlTargets?: IndexedMethod[];
+  localWorkspace?: boolean;
+  started?: boolean;
+  usageTotal?: { input: number; cached: number; output: number };
 }
 export interface ProgressEvent {
   seq: number;
   at: string;
   message: string;
+  kind?: 'progress' | 'assistant' | 'tool' | 'plan' | 'usage';
 }
 export interface ReviewSession {
+  workflow?: import('./review-workflow.js').ReviewWorkflow;
+  contracts?: Contract[];
+  contractsVersion?: string;
   id: string;
   title: string;
   createdAt: string;
@@ -252,6 +417,8 @@ export interface ReviewSession {
   update?: ReviewUpdate;
   discussion?: ReviewDiscussion[];
   threadDiscussion?: ReviewDiscussion[];
+  /** UI synchronization only; never changes the analysis identity. */
+  discussionRevision?: string;
   refreshWarnings?: string[];
 }
 export interface ReviewRevision {
@@ -282,8 +449,11 @@ export interface ReviewDiscussion {
   };
   commitId?: string;
   originalCommitId?: string;
+  /** The diff the reviewer saw, ending at the commented line; kept when the line moves. */
+  diffHunk?: string;
 }
 export interface ReviewUpdate {
+  scopeChanged?: boolean;
   id: string;
   at: string;
   previousReviewId: string;
@@ -292,10 +462,17 @@ export interface ReviewUpdate {
   gaps: string[];
 }
 export interface DraftComment {
+  activity?: import('./review-comment.js').CommentActivity[];
+  origin?: { snapshotId: string; evidence: Evidence };
+  outdated?: boolean;
   id: string;
   body: string;
   evidence: Evidence | null;
   selected: boolean;
+  /** A task for Codex in the fix plan, never published to GitHub. */
+  forCodex?: boolean;
+  /** The GitHub comment this task was made from. */
+  discussionId?: string;
 }
 export interface Submission {
   id: number;
@@ -312,7 +489,27 @@ export interface ReviewDraft {
   state: 'draft' | 'submitting' | 'uncertain' | 'submitted';
   attempt: { marker: string; at: string; payload: unknown } | null;
   submission: Submission | null;
+  /** A new publication on the same commit has a distinct identity. */
+  round?: string;
+  published?: PublishedReview[];
 }
+export interface PublishedReview {
+  snapshotId: string;
+  headSha: string;
+  body: string;
+  action: ReviewAction;
+  comments: DraftComment[];
+  submission: Submission;
+}
+/** Snapshots of the current review and of every saved revision. */
+export const sessionSnapshots = (
+  session: Pick<ReviewSession, 'snapshots' | 'history' | 'workflow'>,
+) => [
+  ...session.snapshots,
+  ...(session.history ?? []).flatMap((revision) => revision.snapshots),
+  ...(session.workflow?.initial.snapshots ?? []),
+  ...(session.workflow?.versions ?? []),
+];
 export const emptyModelResult = (): ModelResult => ({
   summary: '',
   findings: [],

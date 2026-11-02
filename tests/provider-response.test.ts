@@ -42,6 +42,23 @@ describe('Codex analysis response', () => {
     );
   });
 
+  it('allows local read commands only when explicitly enabled, while still rejecting file changes', async () => {
+    const command = {
+      type: 'item.started',
+      item: { id: 'read', type: 'command_execution', command: 'rg find repo-1/head' },
+    } as ThreadEvent;
+    await expect(
+      readAnalysisResponse(stream(command, message('{}')), live(), live(), true),
+    ).resolves.toEqual({});
+    const change = {
+      type: 'item.completed',
+      item: { id: 'write', type: 'file_change', changes: [], status: 'completed' },
+    } as ThreadEvent;
+    await expect(readAnalysisResponse(stream(change), live(), live(), true)).rejects.toThrow(
+      'инструмент',
+    );
+  });
+
   it('stops when the model tries to use a tool', async () => {
     const tool = {
       type: 'item.started',

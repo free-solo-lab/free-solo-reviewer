@@ -1,0 +1,75 @@
+.dialog {
+  width: 760px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px #0004;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.dialog header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+}
+.dialog header h2 {
+  margin: 0;
+  font-size: 16px;
+  flex: 1;
+}
+.dialog header small {
+  color: var(--muted);
+}
+.dialog > input {
+  margin: 0 18px 12px;
+  width: calc(100% - 36px);
+}
+.results {
+  overflow: auto;
+  min-height: 80px;
+  max-height: min(52vh, 480px);
+}
+.results > button {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  padding: 10px 18px;
+  color: var(--text);
+}
+.results > button[aria-selected='true'] {
+  background: var(--hover);
+  box-shadow: inset 3px 0 var(--green);
+}
+.results > button > div {
+  min-width: 0;
+}
+.results small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.kind {
+  min-width: 46px;
+  color: var(--muted);
+  font-size: 11px;
+  padding-top: 2px;
+}
+.results p,
+.dialog footer {
+  padding: 12px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+.dialog footer {
+  border-top: 1px solid var(--border);
+}

@@ -1,0 +1,41 @@
+.code {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.waiting {
+  font-size: 12px;
+  color: var(--muted);
+}
+.apiKey {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.apiKey label {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  font-size: 12px;
+}
+.intro {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}

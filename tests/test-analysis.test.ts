@@ -32,6 +32,13 @@ async function setup() {
     'class TinyTest {\n @Test\n fun accepts() {\n  every { repository.find("id-1") } returns Request("id-1")\n  val result = service.accept(Request("id-1"))\n  assertEquals("ok", result.status)\n }\n}\n',
   );
   snapshot.headFiles.push(path);
+  snapshot.files.push({
+    path,
+    status: 'A',
+    patch: '',
+    addedLines: [3, 4, 5, 6, 7],
+    removedLines: [],
+  });
   const ref = { repoId: snapshot.repoId, side: 'head' as const, path, startLine: 3, endLine: 7 };
   const test: ReviewTest = {
     id: 'accepts',
@@ -81,6 +88,69 @@ async function setup() {
   return { ...f, snapshot, test };
 }
 describe('test review analysis', () => {
+  it('continues the same saved model request after a quota failure and manager restart', async () => {
+    const f = await setup();
+    const store = new Store(join(f.root, 'resume.sqlite'));
+    cleanup.push(() => store.close());
+    const session: ReviewSession = {
+      id: 'resume',
+      title: 'Resume',
+      createdAt: '',
+      snapshots: [f.snapshot],
+      run: null,
+    };
+    store.saveSession(session);
+    let calls = 0;
+    const provider = {
+      id: 'resume-provider',
+      async analyze(input: import('../server/provider').AnalysisInput) {
+        calls++;
+        expect(input.testsOnly).toBeUndefined();
+        if (calls === 1) {
+          input.continuation!.checkpoint.threadId = 'saved-cli-thread';
+          input.continuation!.save();
+          throw new Error('You have hit your usage limit');
+        }
+        expect(input.continuation?.checkpoint.threadId).toBe('saved-cli-thread');
+        return { ...emptyModelResult(), summary: 'Completed review', tests: [f.test] };
+      },
+    };
+    const manager = new AnalysisManager(store, provider);
+    cleanup.push(() => manager.stopAll());
+    manager.start(session);
+    for (let i = 0; i < 200 && manager.isRunning(session.id); i++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    const paused = store.session(session.id)!;
+    expect(paused.run?.checkpoint?.stage).toBe('review');
+    expect(paused.run?.checkpoint?.pending?.threadId).toBe('saved-cli-thread');
+    const runId = paused.run!.id,
+      eventCount = paused.run!.events.length;
+    paused.snapshots[0].headSha = 'a'.repeat(40); // Same source, different commit metadata.
+    const resumed = new AnalysisManager(store, provider);
+    cleanup.push(() => resumed.stopAll());
+    resumed.resume(paused);
+    expect(() => resumed.resume(paused)).toThrow('выполняется');
+    for (let i = 0; i < 200 && resumed.isRunning(session.id); i++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    const saved = store.session(session.id)!;
+    expect(saved.run?.state).toBe('complete');
+    expect(saved.run?.id).toBe(runId);
+    expect(saved.run?.result.summary).toBe('Completed review');
+    expect(saved.run?.events.length).toBeGreaterThan(eventCount);
+    expect(saved.history).toBeUndefined();
+    expect(saved.update).toBeUndefined();
+    expect(saved.run?.checkpoint?.pending).toBeUndefined();
+    expect(
+      new Set(saved.run!.result.indexes.map((index) => `${index.repoId}:${index.side}`)).size,
+    ).toBe(saved.run!.result.indexes.length);
+    resumed.resume(saved);
+    expect(calls).toBe(2);
+    saved.snapshots[0].headSha = 'b'.repeat(40);
+    resumed.resume(saved);
+    expect(calls).toBe(2); // A different commit with identical source is already analyzed.
+    saved.snapshots[0].contentHash = 'different-source';
+    expect(() => resumed.resume(saved)).toThrow('Версия кода');
+  });
   it('validates test call sites and mock data, dropping invalid references and production internals', async () => {
     const f = await setup();
     const test = structuredClone(f.test);
@@ -145,7 +215,8 @@ describe('test review analysis', () => {
         state: 'complete',
         startedAt: '',
         events: [],
-        result: baseline,
+        // An earlier interrupted attempt left its error among the gaps.
+        result: { ...baseline, gaps: [...baseline.gaps, 'Codex/анализ: usage limit'] },
       },
     };
     store.saveSession(session);
@@ -165,6 +236,8 @@ describe('test review analysis', () => {
     });
     cleanup.push(() => manager.stopAll());
     manager.startTests(session);
+    for (let i = 0; i < 300 && calls === 0; i++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
     manager.cancel(session.id);
     for (let i = 0; i < 100 && manager.isRunning(session.id); i++)
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -177,6 +250,7 @@ describe('test review analysis', () => {
     expect(saved.run?.result.summary).toBe(baseline.summary);
     expect(saved.run?.result.database).toEqual(baseline.database);
     expect(saved.run?.result.tests).toEqual([f.test]);
+    expect(saved.run?.result.gaps).toEqual(baseline.gaps);
     expect(saved.history).toBeUndefined();
     manager.startTests(saved);
     expect(calls).toBe(2);
@@ -314,7 +388,7 @@ describe('test review analysis', () => {
     const f = await setup(),
       file = join(f.snapshot.headDir, f.test.evidence[0].path);
     const extra = Array.from(
-      { length: 12 },
+      { length: 42 },
       (_, i) => ` @Test\n fun case${i}() { assertTrue(true) }\n`,
     ).join('');
     await writeFile(file, (await readFile(file, 'utf8')).replace(/}\n$/, `${extra}}\n`));
@@ -369,16 +443,23 @@ describe('test review analysis', () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
     const partial = store.session(session.id)!;
     expect(partial.run?.state).toBe('partial');
-    expect(partial.run?.result.tests).toHaveLength(11);
+    expect(partial.run?.result.tests).toHaveLength(41);
     const kept = structuredClone(partial.run!.result.tests);
-    manager.startTests(partial);
+    const runId = partial.run!.id,
+      eventCount = partial.run!.events.length;
+    // Existing saved reviews have no checkpoint, but their completed batches must survive too.
+    delete partial.run!.checkpoint;
+    manager.resume(partial);
     for (let i = 0; i < 200 && manager.isRunning(session.id); i++)
       await new Promise((resolve) => setTimeout(resolve, 5));
     const saved = store.session(session.id)!;
     expect(saved.run?.state).toBe('complete');
-    expect(saved.run?.result.tests?.slice(0, 11)).toEqual(kept);
-    expect(saved.run?.result.tests).toHaveLength(13);
-    expect(sizes).toEqual([10, 2, 2]);
+    expect(saved.run?.result.tests?.slice(0, 41)).toEqual(kept);
+    expect(saved.run?.result.tests).toHaveLength(43);
+    expect(sizes).toEqual([40, 2, 2]);
+    expect(saved.run?.id).toBe(runId);
+    expect(saved.run!.events.length).toBeGreaterThan(eventCount);
+    expect(saved.history).toBeUndefined();
   });
   it('does not carry stale mock data when its fixture file changes after the review', async () => {
     const f = await setup();

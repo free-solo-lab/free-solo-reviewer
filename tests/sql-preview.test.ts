@@ -148,7 +148,7 @@ describe('SQL previews', () => {
               tables: ['orders'],
               unknowns: [],
               query: {
-                method: target.name,
+                method: `Repository.${target.name}(FilterDto)`,
                 framework: 'hibernate',
                 evidence: target.evidence,
                 parameters: [{ position: 1, expression: 'order.id' }],
@@ -166,7 +166,8 @@ describe('SQL previews', () => {
     expect(failed.run?.state).toBe('partial');
     expect(failed.run?.result.summary).toBe(previous.summary);
     expect(failed.run?.result.database).toEqual(previous.database);
-    manager.startSql(failed);
+    const resumedId = failed.run!.id;
+    manager.resume(failed);
     for (let i = 0; i < 100 && manager.isRunning(session.id); i++)
       await new Promise((resolve) => setTimeout(resolve, 10));
     const partial = store.session(session.id)!;
@@ -174,11 +175,12 @@ describe('SQL previews', () => {
     expect(partial.run?.result.sqlAnalysisVersion).toBeUndefined();
     expect(partial.run?.result.database).toHaveLength(1);
     expect(store.analysisResult(partial.run!.fingerprint)).toBeUndefined();
-    manager.startSql(partial);
+    manager.resume(partial);
     for (let i = 0; i < 100 && manager.isRunning(session.id); i++)
       await new Promise((resolve) => setTimeout(resolve, 10));
     const saved = store.session(session.id)!;
     expect(saved.run?.state).toBe('complete');
+    expect(saved.run?.id).toBe(resumedId);
     expect(saved.run?.result.summary).toBe(previous.summary);
     expect(saved.history).toBeUndefined();
     expect(sqlPreview(snapshot, method, saved.run!.result).origin).toBe('model');

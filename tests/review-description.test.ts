@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reviewDescription } from '../shared/review-description';
+import { omitSections, reviewDescription } from '../shared/review-description';
 describe('saved plain-text description formatting', () => {
   it('structures old prose and marks code identifiers without inventing facts', () => {
     const result = reviewDescription(
@@ -25,5 +25,28 @@ describe('saved plain-text description formatting', () => {
   it('does not add empty sections for empty or single-sentence text', () => {
     expect(reviewDescription('')).toBe('');
     expect(reviewDescription('Одно изменение.')).toBe('Одно изменение.');
+  });
+});
+
+describe('hidden description sections', () => {
+  it('drops a whole section up to the next heading and keeps the rest', () => {
+    const text = [
+      '### Суть изменений',
+      'Поиск стал постраничным.',
+      '### До и после',
+      '- **До:** без курсора.',
+      '- **После:** курсор.',
+      '### Что требует проверки',
+      '- Граница страницы.',
+    ].join('\n');
+    expect(omitSections(text, ['до и после'])).toBe(
+      [
+        '### Суть изменений',
+        'Поиск стал постраничным.',
+        '### Что требует проверки',
+        '- Граница страницы.',
+      ].join('\n'),
+    );
+    expect(omitSections(text, ['Ответы в обсуждении'])).toBe(text);
   });
 });

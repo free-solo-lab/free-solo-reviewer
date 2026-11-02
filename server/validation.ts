@@ -2,6 +2,7 @@ import type { ModelResult, Snapshot, Evidence } from '../shared/model.js';
 import { emptyModelResult, modelResultSchema } from '../shared/model.js';
 import { isTestPath } from '../shared/test-coverage.js';
 import { readSource } from './repository.js';
+import { t } from '../shared/i18n.js';
 
 export async function validateModelResult(
   raw: unknown,
@@ -24,7 +25,7 @@ export async function validateModelResult(
     const refs: Evidence[] = [];
     for (const e of item.evidence) if (await valid(e)) refs.push(e);
     if (refs.length !== item.evidence.length)
-      result.gaps.push('Отброшены ссылки модели на отсутствующие файлы или строки.');
+      result.gaps.push(t('Model references to missing files or lines were dropped.'));
     return {
       ...item,
       evidence: refs,
@@ -38,7 +39,7 @@ export async function validateModelResult(
     // A claim without evidence is never displayed as an actionable finding.
     const kept = checked.filter((v) => v.evidence.length > 0);
     if (kept.length !== checked.length)
-      result.gaps.push(`Раздел ${key}: отброшены утверждения без проверяемых ссылок.`);
+      result.gaps.push(t('Section {0}: claims without verifiable references were dropped.', key));
     (result[key] as unknown[]) = kept;
   }
   const repoIds = new Set(snapshots.map((s) => s.repoId));
@@ -54,7 +55,12 @@ export async function validateModelResult(
         const checkedStep = await check(step);
         checkedStep.evidence.sort((a, b) => Number(isTest(b)) - Number(isTest(a)));
         if (!checkedStep.evidence.some(isTest)) {
-          result.gaps.push(`Тест «${test.title}»: пропущен шаг без ссылки на тест или его setup.`);
+          result.gaps.push(
+            t(
+              'Test “{0}”: a step without a reference to the test or its setup was skipped.',
+              test.title,
+            ),
+          );
           continue;
         }
         checkedStep.data = [];
@@ -72,7 +78,9 @@ export async function validateModelResult(
     if (operation.query) {
       const ref = operation.query.evidence;
       if (!(await valid(ref))) {
-        result.gaps.push(`SQL «${operation.title}»: недостоверная ссылка на метод запроса.`);
+        result.gaps.push(
+          t('SQL “{0}”: unreliable reference to the query method.', operation.title),
+        );
         operation.query = null;
         operation.sql = '';
       } else if (!operation.evidence.some((e) => JSON.stringify(e) === JSON.stringify(ref)))
@@ -86,7 +94,7 @@ export async function validateModelResult(
       const checked = await check(step);
       if (checked.evidence.length && repoIds.has(step.from) && repoIds.has(step.to))
         steps.push(checked);
-      else result.gaps.push(`В сценарии «${scenario.title}» пропущен неподтверждённый шаг.`);
+      else result.gaps.push(t('Scenario “{0}”: an unconfirmed step was skipped.', scenario.title));
     }
     scenario.steps = steps;
   }
@@ -128,7 +136,8 @@ export function decodeModelResult(raw: unknown): ModelResult {
   }
   const full = modelResultSchema.safeParse(raw);
   if (full.success) return full.data;
-  if (!raw || typeof raw !== 'object') throw new Error('Модель не вернула объект анализа.');
+  if (!raw || typeof raw !== 'object')
+    throw new Error(t('The model did not return an analysis object.'));
   const object = raw as Record<string, unknown>,
     result = emptyModelResult();
   result.summary = typeof object.summary === 'string' ? object.summary : '';
@@ -142,19 +151,19 @@ export function decodeModelResult(raw: unknown): ModelResult {
     for (const item of object.tests) {
       const parsed = modelResultSchema.shape.tests.unwrap().element.safeParse(item);
       if (parsed.success) result.tests.push(parsed.data);
-      else result.gaps.push('Раздел tests: пропущен элемент с некорректной структурой.');
+      else result.gaps.push(t('Section tests: an item with an invalid structure was skipped.'));
     }
   }
   for (const key of ['findings', 'scenarios', 'database', 'transactions'] as const) {
     const items = object[key];
     if (!Array.isArray(items)) {
-      result.gaps.push(`Раздел ${key}: модель вернула некорректный формат.`);
+      result.gaps.push(t('Section {0}: the model returned an invalid format.', key));
       continue;
     }
     for (const item of items) {
       const parsed = modelResultSchema.shape[key].element.safeParse(item);
       if (parsed.success) (result[key] as unknown[]).push(parsed.data);
-      else result.gaps.push(`Раздел ${key}: пропущен элемент с некорректной структурой.`);
+      else result.gaps.push(t('Section {0}: an item with an invalid structure was skipped.', key));
     }
   }
   return result;

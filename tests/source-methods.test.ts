@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { sourceDiffRows } from '../shared/source-diff';
 import { sourceMethodRows } from '../shared/source-methods';
 import { SourceCode } from '../web/components';
+import { TooltipProvider } from '../web/ui/Tooltip';
 import type { ChangedFile, Evidence } from '../shared/model';
 import type { MethodView } from '../shared/viewed-methods';
 
@@ -63,8 +64,13 @@ describe('method folding in shared source review', () => {
         },
       ],
     };
+    // The delete action has a tooltip, which needs the provider the app mounts at its root.
     const editable = renderToStaticMarkup(
-      React.createElement(SourceCode, { ...props, onDeleteComment() {} }),
+      React.createElement(
+        TooltipProvider,
+        null,
+        React.createElement(SourceCode, { ...props, onDeleteComment() {} }),
+      ),
     );
     expect(editable).toContain('aria-label="Удалить комментарий"');
     expect(editable).toContain('Saved note');

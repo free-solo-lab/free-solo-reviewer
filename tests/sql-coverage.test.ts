@@ -35,12 +35,34 @@ const operation = (m: IndexedMethod): DatabaseOperation => ({
   query: { method: 'Repository.find', framework: 'jooq', evidence: m.evidence, parameters: [] },
 });
 describe('SQL method coverage', () => {
+  it.each([
+    'Repository.find(FilterDto)',
+    'find(String, Map<String, Object>)',
+    'Repository.find()',
+    'Repository.find',
+  ])('accepts method metadata with signature %s without losing explicit unknowns', (name) => {
+    const target = method();
+    const item = operation(target);
+    item.query!.method = name;
+    item.query!.evidence = { ...target.evidence, startLine: 11, endLine: 19 };
+    expect(queryMatchesMethod(item, target)).toBe(true);
+    expect(
+      queryMatchesMethod(item, {
+        ...target,
+        evidence: { ...target.evidence, startLine: 30, endLine: 40 },
+      }),
+    ).toBe(false);
+    expect(
+      queryMatchesMethod(item, { ...target, evidence: { ...target.evidence, side: 'base' } }),
+    ).toBe(false);
+  });
   it('ignores tests and old versions; accepts an explicit unknown only for its exact method', () => {
     const current = method(),
       old = method(undefined, 'base'),
       test = method('src/test/RepositoryTest.kt');
     const snapshot = {
       repoId: 'repo',
+      files: [{ path: current.evidence.path, status: 'M', addedLines: [12], removedLines: [12] }],
       headFiles: [current.evidence.path, test.evidence.path],
     } as Snapshot;
     const indexes = [{ methods: [current, old, test] }] as SourceIndex[];

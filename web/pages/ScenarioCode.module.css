@@ -1,0 +1,61 @@
+.flow {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--paper);
+}
+.block {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  min-height: 44px;
+  padding: 6px 16px;
+  background: #fbfbfb;
+  border-bottom: 1px solid var(--border);
+}
+.heading > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.heading h3 {
+  min-width: 0;
+  margin: 0;
+  font:
+    600 13px 'IBM Plex Mono',
+    monospace;
+  overflow-wrap: anywhere;
+}
+.source :global(.source-code) > :global(.source-method-toolbar):first-child {
+  border-top: 0;
+}
+.heading button {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.source {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.source :global(.source-code) {
+  flex: none;
+  overflow: visible;
+  max-height: none;
+  /* The class heading sits right on the first method; no strip between them. */
+  padding-block: 0 8px;
+}
+.empty {
+  margin: 0;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}

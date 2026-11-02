@@ -94,7 +94,10 @@ export function sequenceMethod(
         (ref) => ref.repoId === method.evidence.repoId && ref.side === method.evidence.side,
       ) && new Set<string>(step.label.match(/\b[\w$]+\b/g) ?? []).has(method.name),
   );
-  const targetName = step.label.split(/→|->/).at(-1)!;
+  const endpoints = step.label.split(/→|->/);
+  // A return carries the result of its sender, not the return type of its recipient.
+  const targetName =
+    step.kind === 'return' && endpoints.length > 1 ? endpoints[0] : endpoints.at(-1)!;
   const exact = named.filter((method) => {
     const owner = method.evidence.path
       .split('/')

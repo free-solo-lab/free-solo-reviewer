@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '../shared/i18n';
 
 export function SequenceCanvas({
   width,
@@ -32,7 +33,7 @@ export function SequenceCanvas({
           height={headerHeight - topInset}
           viewBox={`0 ${topInset} ${width} ${headerHeight - topInset}`}
           role="group"
-          aria-label="Участники диаграммы"
+          aria-label={t('Diagram participants')}
         >
           {header}
         </svg>

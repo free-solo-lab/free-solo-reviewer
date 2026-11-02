@@ -1,6 +1,7 @@
 import type { AnalysisResult, IndexedMethod, Snapshot } from '../shared/model.js';
 import type { SqlPreview } from '../shared/sql-preview.js';
 import { queryMatchesMethod } from '../shared/sql-coverage.js';
+import { t, tc } from '../shared/i18n.js';
 
 /** Read pinned analysis artifacts. Opening the panel runs no model or renderer. */
 export function sqlPreview(
@@ -30,18 +31,25 @@ export function sqlPreview(
       available
         .map((variant) => `-- ${variant.title.replace(/[\r\n]/g, ' ')}\n${variant.sql}`)
         .join('\n\n'),
-    dialect: [...new Set(operations.map((item) => item.dialect))].join(' / ') || 'Не определён',
+    dialect:
+      [...new Set(operations.map((item) => item.dialect))].join(' / ') || tc('dialect', 'Unknown'),
     parameters: single?.parameters ?? [],
     ...(variants.length > 1 ? { variants } : {}),
     unknowns: [
       ...new Set([
         ...operations.flatMap((item) => item.unknowns),
         ...(available.length
-          ? ['SQL восстановлен Codex по коду; фактический запрос приложения не наблюдался.']
+          ? [
+              t(
+                'The SQL was rebuilt by Codex from the code; the application’s actual query was not observed.',
+              ),
+            ]
           : operations.length
             ? []
             : [
-                'SQL для этого метода ещё не сформирован Codex. Запустите дополнение SQL; сохранённый разбор PR останется прежним.',
+                t(
+                  'Codex has not generated SQL for this method yet. Run the SQL completion; the saved PR review stays the same.',
+                ),
               ]),
       ]),
     ],

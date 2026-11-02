@@ -3,6 +3,8 @@ export class AppError extends Error {
   constructor(
     message: string,
     public status = 400,
+    /** A stable reason the page can offer a way out for. */
+    public code?: string,
   ) {
     super(message);
   }
@@ -55,5 +57,7 @@ export async function command(
     child.stdin?.end(options.input);
   });
 }
+/** Repository configuration must not run programs: no hooks and no file-system monitor. */
+export const SAFE_GIT_CONFIG = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
 export const git = (cwd: string, args: string[], options: CommandOptions = {}) =>
-  command('git', ['-c', 'core.hooksPath=/dev/null', ...args], { ...options, cwd });
+  command('git', [...SAFE_GIT_CONFIG, ...args], { ...options, cwd });

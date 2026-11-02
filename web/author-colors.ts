@@ -15,9 +15,6 @@ export function authorColors(author: string) {
     }
     assigned.set(key, hue);
   }
-  return {
-    '--author-accent': `hsl(${hue} 44% 34%)`,
-    '--author-tint': `hsl(${hue} 48% 95%)`,
-    '--author-border': `hsl(${hue} 40% 74%)`,
-  };
+  // The shades for the hue are defined in the stylesheet, separately for each theme.
+  return { '--author-hue': hue };
 }

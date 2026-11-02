@@ -1,0 +1,550 @@
+/* The page scrolls itself: the settings layout clips its content area. The side padding keeps
+   the text in an 880px column while the scrollbar stays at the window edge. */
+.page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px max(24px, calc((100% - 880px) / 2)) 64px;
+  font-size: 13px;
+}
+.header {
+  margin-bottom: 24px;
+}
+.header h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.header p {
+  max-width: 720px;
+  margin: 0 0 8px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.muted {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.error {
+  margin: 6px 0 0;
+  color: var(--red);
+}
+.sectionTitle {
+  margin: 28px 0 10px;
+  font-size: 14px;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-card);
+}
+.row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 16px 18px;
+}
+.row + .row {
+  border-top: 1px solid var(--border);
+}
+.row > .icon {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.row strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.path {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  font-size: 11px;
+  word-break: break-all;
+}
+.mode {
+  min-width: 200px;
+  font-size: 12px;
+}
+
+/* The analysis scheme: numbered stages on one line, top to bottom. */
+.pipeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 14px;
+  padding-bottom: 14px;
+}
+.stage:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 30px;
+  bottom: 0;
+  left: 13px;
+  width: 2px;
+  background: var(--border);
+}
+.stageNumber {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--paper);
+  font-size: 12px;
+  font-weight: 650;
+}
+.stageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-card);
+}
+.stageOff .stageNumber,
+.stageOff .stageCard {
+  border-style: dashed;
+  box-shadow: none;
+}
+.stageOff .stageCard > :not(.stageHeading):not(.effect) {
+  opacity: 0.6;
+}
+.stageHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stageHeading > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.stageHeading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.runs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.runs.local {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.always {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.effect {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.effect .icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.requestLabel {
+  margin-right: 4px;
+  padding-top: 5px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.plus {
+  padding-top: 4px;
+  color: var(--muted);
+}
+.part {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.part small {
+  max-width: 220px;
+  padding-left: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+  font-size: 12px;
+  color: var(--text);
+}
+.prompt:hover:not(:disabled) {
+  background: var(--hover);
+}
+.prompt .icon {
+  color: var(--muted);
+}
+.flag {
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  font-size: 10px;
+  color: var(--orange);
+}
+.continuation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 42px;
+}
+
+/* A switch drawn from the native checkbox, so keyboard and screen readers work as before. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.switch input {
+  appearance: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+.switch input:checked {
+  background: var(--text);
+}
+.switch input:checked::after {
+  transform: translateX(14px);
+}
+.switch input:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* The prompt editor slides in from the right of the scheme. */
+.drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 92vw);
+  height: 100dvh;
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: -8px 0 45px rgba(0, 0, 0, 0.18);
+  animation: slideIn 0.18s ease-out;
+}
+@keyframes slideIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.drawerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.drawerHeader small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.drawerHeader h2 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+.drawerBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 16px 22px;
+  overflow: auto;
+  font-size: 13px;
+}
+.drawerBody label {
+  font-weight: 650;
+}
+.drawerBody textarea {
+  flex: 1;
+  min-height: 320px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: none;
+}
+.variables summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.variables p {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.variables code {
+  display: inline-block;
+  margin: 2px 6px 2px 0;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  font-size: 11px;
+}
+.drawerFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 16px 16px 48px;
+  }
+  .stageHeading,
+  .row {
+    flex-wrap: wrap;
+  }
+  .row {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+  .row > :last-child:not(div) {
+    grid-column: 2;
+  }
+  .mode {
+    min-width: 0;
+  }
+}
+
+/* Issues: a form for new feedback and the list of the user's issues. */
+.sectionTitle span {
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.newIssue {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+}
+.newIssue label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-weight: 650;
+}
+.newIssue input:not([type='checkbox']),
+.newIssue textarea {
+  font-weight: 400;
+}
+.newIssue textarea {
+  resize: vertical;
+  line-height: 1.55;
+}
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kinds button {
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.kinds button[aria-checked='true'] {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--paper);
+}
+.newIssue .checkbox {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.checkbox input {
+  margin-top: 2px;
+}
+.checkbox small {
+  display: block;
+  color: var(--muted);
+}
+.formActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.issues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+.issues li + li {
+  border-top: 1px solid var(--border);
+}
+.issue {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 400;
+}
+.issue:hover {
+  background: var(--hover);
+}
+.issue:active {
+  transform: none;
+}
+.issueState {
+  display: inline-flex;
+  color: #2f8f4e;
+}
+.issueState.closed {
+  color: #8250df;
+}
+.issueMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.issueMain strong {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.issueMain small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.unread {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 650;
+}
+.drawerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.message {
+  max-width: 92%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--page);
+}
+.message.own {
+  align-self: flex-end;
+  background: var(--accent);
+}
+.message small {
+  color: var(--muted);
+}
+.message small strong {
+  color: var(--text);
+}
+.replyBox {
+  flex-direction: column;
+  align-items: stretch;
+}
+.replyBox textarea {
+  resize: vertical;
+}
+.replyBox button {
+  align-self: flex-end;
+}

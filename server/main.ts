@@ -1,9 +1,20 @@
-import { createApp } from './app.js';
-const port = Number(process.env.REVIEW_PORT ?? 4318);
-const { app } = createApp({ port });
-await app.listen({ port, host: '127.0.0.1' });
-console.log(`Review: http://127.0.0.1:${port}`);
-for (const signal of ['SIGINT', 'SIGTERM'] as const)
-  process.on(signal, () => {
-    void app.close().then(() => process.exit(0));
-  });
+import { startReviewerService } from './service.js';
+import { t } from '../shared/i18n.js';
+try {
+  const service = await startReviewerService();
+  console.log(`Review: ${service.url}${service.reused ? t(' (server already running)') : ''}`);
+  if (!service.reused)
+    for (const signal of ['SIGINT', 'SIGTERM'] as const)
+      process.on(signal, () => {
+        void service.close().then(
+          () => process.exit(0),
+          (error) => {
+            console.error(error);
+            process.exit(1);
+          },
+        );
+      });
+} catch (error) {
+  console.error(`Reviewer: ${(error as Error).message}`);
+  process.exitCode = 1;
+}

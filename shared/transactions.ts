@@ -1,5 +1,6 @@
 import type { AnalysisResult, Evidence, IndexedMethod, Scenario } from './model.js';
 import { databaseParticipant, overlaps, type SequenceScenario } from './sequence.js';
+import { t } from './i18n.js';
 
 export interface TransactionRegion {
   id: string;
@@ -16,13 +17,17 @@ export interface TransactionRegion {
   participants?: string[];
 }
 const descriptions: Record<string, string> = {
-  REQUIRED: 'Присоединение к внешней транзакции; новая создаётся только при её отсутствии.',
-  REQUIRES_NEW: 'Отдельная транзакция; внешняя приостанавливается при вызове через Spring proxy.',
-  NESTED: 'Вложенная область с savepoint, если transaction manager поддерживает этот режим.',
-  SUPPORTS: 'Транзакция действует только при наличии внешней.',
-  MANDATORY: 'Требуется внешняя транзакция; новая здесь не создаётся.',
-  NOT_SUPPORTED: 'Выполнение без транзакции; внешняя приостанавливается при вызове через proxy.',
-  NEVER: 'Выполнение без транзакции; наличие внешней приводит к ошибке.',
+  REQUIRED: t('Joins the outer transaction; a new one is created only when there is none.'),
+  REQUIRES_NEW: t(
+    'A separate transaction; the outer one is suspended when called through the Spring proxy.',
+  ),
+  NESTED: t('A nested scope with a savepoint, if the transaction manager supports this mode.'),
+  SUPPORTS: t('The transaction applies only when there is an outer one.'),
+  MANDATORY: t('An outer transaction is required; no new one is created here.'),
+  NOT_SUPPORTED: t(
+    'Runs without a transaction; the outer one is suspended when called through a proxy.',
+  ),
+  NEVER: t('Runs without a transaction; an outer one causes an error.'),
 };
 const annotation = (method: IndexedMethod) =>
   method.annotations.find((a) => /@(?:[\w]+\.)*Transactional\b/.test(a));
@@ -132,11 +137,11 @@ export function transactionRegions(
             : 'uncertain';
     const unknowns = [
       ...(tx?.unknowns ?? []),
-      'Границы восстановлены по исходникам; фактические commit/rollback не наблюдались.',
+      t('Boundaries are rebuilt from sources; actual commits and rollbacks were not observed.'),
     ];
     if (selfCall)
       unknowns.unshift(
-        'Возможен self-invocation: вызов внутри того же класса может обойти Spring proxy.',
+        t('Possible self-invocation: a call within the same class may bypass the Spring proxy.'),
       );
     const groups: number[][] = [];
     const reachable = reachableMethods(method, methods);
@@ -168,11 +173,13 @@ export function transactionRegions(
           propagation,
           mode,
           description: selfCall
-            ? 'Граница не подтверждена: возможен обход Spring proxy.'
-            : (descriptions[propagation] ?? 'Режим транзакции не определён.'),
+            ? t('The boundary is not confirmed: the Spring proxy may be bypassed.')
+            : (descriptions[propagation] ?? t('The transaction mode is unknown.')),
           rollback:
             tx?.rollback ??
-            'По умолчанию Spring откатывает RuntimeException и Error; rollbackFor/noRollbackFor и transaction manager требуют проверки.',
+            t(
+              'By default Spring rolls back on RuntimeException and Error; rollbackFor/noRollbackFor and the transaction manager need checking.',
+            ),
           unknowns,
           evidence: [method.evidence],
           participants: scopedParticipants(
@@ -218,20 +225,28 @@ export function transactionRegions(
           end: group.at(-1)!,
           propagation: `jOOQ · ${tx.api}`,
           mode: 'transaction',
-          description:
-            'Программная транзакция: область callback. Вызов внутри того же Spring-бина не требует перехвата аннотации через proxy.',
-          rollback:
-            'Необработанное исключение из callback приводит к rollback. Перехваченное исключение само по себе не доказывает откат.',
+          description: t(
+            'Programmatic transaction: the callback scope. A call within the same Spring bean does not need the annotation to be intercepted by a proxy.',
+          ),
+          rollback: t(
+            'An unhandled exception from the callback causes a rollback. A caught exception alone does not prove a rollback.',
+          ),
           unknowns: [
-            'Фактические commit/rollback не наблюдались. Участие запросов зависит от Configuration/DSLContext и TransactionProvider; внешний DSLContext требует проверки.',
+            t(
+              'Actual commits and rollbacks were not observed. Query participation depends on Configuration/DSLContext and the TransactionProvider; an outer DSLContext needs checking.',
+            ),
             ...(tx.nested
               ? [
-                  'Вложенный вызов: savepoint и поведение вложенности зависят от TransactionProvider.',
+                  t(
+                    'Nested call: the savepoint and nesting behavior depend on the TransactionProvider.',
+                  ),
                 ]
               : []),
             ...(tx.asynchronous
               ? [
-                  'Асинхронная/реактивная область: окончание callback не подтверждает завершение транзакции; для Publisher требуется подписка.',
+                  t(
+                    'Asynchronous/reactive scope: the end of the callback does not confirm the transaction finished; a Publisher needs a subscription.',
+                  ),
                 ]
               : []),
           ],
@@ -250,13 +265,19 @@ export function transactionRegions(
   return regions.sort((a, b) => a.start - b.start || b.end - a.end || a.id.localeCompare(b.id));
 }
 
-export function sequenceLayout(scenario: Scenario, regions: TransactionRegion[], startY = 126) {
+export function sequenceLayout(
+  scenario: Scenario,
+  regions: TransactionRegion[],
+  startY = 126,
+  /** Extra room after a step, e.g. for several answers returning there. */
+  gaps: number[] = [],
+) {
   const rows: number[] = [];
   let cursor = startY;
   scenario.steps.forEach((_step, index) => {
     cursor += regions.filter((r) => r.start === index).length * 32;
     rows.push(cursor);
-    cursor += 112;
+    cursor += 112 + (gaps[index] ?? 0);
     cursor += regions.filter((r) => r.end === index).length * 24;
   });
   const frames = regions.map((region, index) => {

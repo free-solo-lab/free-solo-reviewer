@@ -1,4 +1,5 @@
 import type { ChangedFile, Evidence } from './model.js';
+import { parseHunkHeader } from './patch.js';
 export interface SourceDiffRow {
   text: string;
   kind: 'addition' | 'deletion' | 'context';
@@ -28,11 +29,12 @@ export function sourceDiffRows(
       });
   };
   for (const raw of (file?.patch ?? '').split('\n')) {
-    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+    const hunk = parseHunkHeader(raw);
     if (hunk) {
       finish();
-      left = Math.max(1, Number(hunk[1]) + (hunk[2] === '0' ? 1 : 0));
-      right = Math.max(1, Number(hunk[3]) + (hunk[4] === '0' ? 1 : 0));
+      // An empty side names the line before the change; anchor rows after it.
+      left = Math.max(1, hunk.oldStart + (hunk.oldCount === 0 ? 1 : 0));
+      right = Math.max(1, hunk.newStart + (hunk.newCount === 0 ? 1 : 0));
       inHunk = true;
       continue;
     }

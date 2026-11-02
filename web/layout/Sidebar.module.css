@@ -1,0 +1,463 @@
+.sidebar {
+  width: var(--sidebar-w);
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: #f7f7f8;
+  border-right: 1px solid var(--border);
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 10px 0;
+  z-index: 20;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 20px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.alpha {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--orange);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.brandMark {
+  width: 25px;
+  height: 25px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--page);
+  line-height: 23px;
+  text-align: center;
+  font-size: 19px;
+  font-weight: 800;
+  position: relative;
+}
+.brandMark span {
+  position: absolute;
+  right: 2px;
+  top: -4px;
+  font-size: 12px;
+}
+.sidebarRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.sidebarRow:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sidebarRow.active {
+  background: var(--selected);
+  color: var(--text);
+}
+.sidebarRow.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: #416bc6;
+}
+.sidebarRow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sidebarRow:disabled:hover {
+  background: transparent;
+  color: var(--text-2);
+}
+.sidebarRow :global(.icon) {
+  color: var(--muted);
+}
+.sidebarRow.active :global(.icon) {
+  color: #416bc6;
+}
+.sidebarRow i {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  padding: 0 2px;
+}
+.newSession {
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+}
+.sidebar > nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.navLabel {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px;
+  margin: 25px 0 9px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.sessionList {
+  overflow: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sessionRow {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.sessionRow:hover {
+  background: var(--hover);
+}
+.sessionRow.selected {
+  background: var(--selected);
+}
+.sessionOpen {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  gap: 9px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  min-height: 50px;
+  padding: 7px 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+.sessionOpen:hover {
+  background: transparent;
+}
+.sessionDetails {
+  min-width: 0;
+}
+.sessionTitle {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionSource {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+.sessionMeta {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sessionMeta > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sessionMeta time {
+  flex-shrink: 0;
+}
+.sessionState {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+.sessionState.analyzed,
+.sessionState.running {
+  color: #416bc6;
+}
+.sessionState.sent {
+  color: #8164b0;
+}
+.sessionState.attention {
+  color: var(--orange);
+}
+.sessionState.failed {
+  color: var(--red);
+}
+.sessionState.running :global(.icon) {
+  animation: session-spin 1.8s linear infinite;
+}
+@keyframes session-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sessionState.running :global(.icon) {
+    animation: none;
+  }
+}
+.sessionDelete {
+  display: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  opacity: 0;
+  color: var(--muted);
+}
+.sessionRow:hover .sessionDelete,
+.sessionRow:focus-within .sessionDelete {
+  display: inline-flex;
+  opacity: 1;
+}
+.sessionDelete:hover {
+  color: var(--red);
+  background: rgba(192, 79, 58, 0.1);
+}
+@media (hover: none) {
+  .sessionDelete {
+    display: inline-flex;
+    opacity: 1;
+  }
+}
+.sidebarHint {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.sessionSkeleton {
+  gap: 14px;
+  padding: 8px;
+}
+.requestsSection {
+  margin: 8px -10px 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+.sidebarBottom {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: auto -10px 0;
+  border-top: 1px solid var(--border);
+  padding: 10px 16px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.sidebarBottomName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebarBottom :global(.status-dot) {
+  margin: 0 0 0 auto;
+}
+.avatar {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--selected);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .sidebar {
+    padding: 12px 6px 0;
+  }
+  .brand {
+    font-size: 0;
+    padding: 2px 9px 14px;
+  }
+  .alpha,
+  .newSession,
+  .navLabel,
+  .sessionList,
+  .sidebarBottom {
+    display: none;
+  }
+  .sidebarRow {
+    justify-content: center;
+    padding: 8px 0;
+  }
+  .sidebarRowLabel,
+  .sidebarRow i {
+    display: none;
+  }
+}
+.userMenu {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.userButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.userButton .sidebarBottomName {
+  flex: 1;
+}
+.userPopup {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: -4px;
+  min-width: calc(100% + 8px);
+  width: max-content;
+  max-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 20px #0002;
+  z-index: 50;
+}
+.userPopup a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  color: #323232;
+  text-decoration: none;
+  border-radius: 6px;
+}
+.userPopup a:hover,
+.userPopup a:focus-visible {
+  background: #f0f0f0;
+}
+.userPopup > button,
+.accounts button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #323232;
+  text-align: left;
+}
+.userPopup > button:hover,
+.accounts button:hover,
+.userPopup > button:focus-visible,
+.accounts button:focus-visible {
+  background: #f0f0f0;
+}
+.accounts {
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.accounts small {
+  display: block;
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.accounts button[aria-pressed='true'] {
+  font-weight: 650;
+}
+.userError {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--danger, #b42318);
+}
+@media (max-width: 760px) {
+  .userPopup {
+    left: 0;
+    right: auto;
+    width: 185px;
+  }
+}
+@media (max-width: 760px) {
+  .sidebarBottom {
+    display: flex;
+    padding: 8px 2px;
+  }
+  .sidebarBottom > button {
+    display: none;
+  }
+  .userButton {
+    justify-content: center;
+  }
+  .userButton .sidebarBottomName,
+  .userButton > :global(.icon) {
+    display: none;
+  }
+}
+.settingsHeading {
+  margin: 22px 10px 14px;
+  font-size: 18px;
+}
+a.sidebarRow {
+  text-decoration: none;
+}
+@media (max-width: 760px) {
+  .settingsHeading {
+    display: none;
+  }
+}
+
+/* New replies to the user's feedback issues. */
+.sidebarRow i.unread,
+.userPopup i.unread {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: var(--paper);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 16px;
+}
+.avatar {
+  position: relative;
+}
+.avatarDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--page);
+  border-radius: 50%;
+  background: var(--orange);
+}
