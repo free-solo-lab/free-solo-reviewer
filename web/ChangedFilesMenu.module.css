@@ -1,0 +1,57 @@
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.filters .search {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toggle:has(:checked) {
+  background: var(--hover);
+  color: var(--text-2);
+}
+.toggle:hover {
+  background: var(--hover);
+}
+.filters .toggle input {
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.filters .controls select {
+  width: auto;
+  max-width: 100%;
+  padding: 4px 22px 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background-color: transparent;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.filters .controls select:hover {
+  background-color: var(--hover);
+}

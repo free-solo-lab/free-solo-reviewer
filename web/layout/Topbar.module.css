@@ -1,0 +1,210 @@
+.topbar {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--page);
+  min-width: 0;
+}
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+  flex-wrap: wrap;
+}
+.identity {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.breadcrumb {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.breadcrumb strong {
+  color: var(--text);
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.breadcrumbLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+.breadcrumbLink:hover {
+  color: var(--text);
+  background: transparent;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 1px;
+}
+.branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.topbarActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.topbarActions > button:global(.compact),
+.topbarActions > button.codex {
+  min-height: 28px;
+  padding: 4px 9px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  gap: 6px;
+}
+.topbarActions :global(svg) {
+  width: 14px;
+  height: 14px;
+}
+.runState {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.runState :global(.status-dot) {
+  margin: 0;
+  width: 5px;
+  height: 5px;
+}
+.review {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--text);
+  color: var(--paper);
+  border-color: var(--text);
+}
+.review :global(svg:last-child) {
+  width: 12px;
+  height: 12px;
+}
+.reviewCount {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.25);
+  color: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.codex {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+.topbarActions > button.codex:hover {
+  background: var(--hover);
+  border-color: transparent;
+  color: var(--text);
+}
+.taskCount {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.refresh {
+  color: var(--muted);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+}
+.spinning :global(svg) {
+  animation: topbar-spin 0.9s linear infinite;
+}
+@keyframes topbar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.fixNeedsAttention {
+  color: var(--orange);
+  background: var(--accent);
+  border-color: var(--orange);
+}
+@media (max-width: 760px) {
+  .actionRow {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .topbarActions {
+    gap: 6px;
+  }
+  .breadcrumb strong {
+    white-space: normal;
+  }
+}
+@media (pointer: coarse) {
+  .topbarActions > button,
+  .topbarActions > button:global(.compact),
+  .topbarActions > button.codex {
+    min-height: 44px;
+  }
+}
+
+.renameTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  min-width: 0;
+}
+.renameTitle :global(.icon) {
+  color: var(--muted);
+  opacity: 0;
+}
+.renameTitle:hover :global(.icon),
+.renameTitle:focus-visible :global(.icon) {
+  opacity: 1;
+}
+.renameForm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.renameForm input {
+  width: min(360px, 45vw);
+}

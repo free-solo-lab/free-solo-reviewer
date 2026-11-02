@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReviewDiscussion } from '../shared/model';
 import { REACTIONS, type ReactionContent } from '../shared/reactions';
+import { t } from '../shared/i18n';
 export function MessageReactions({
   comment,
   onReact,
@@ -48,7 +49,9 @@ export function MessageReactions({
       setOpen(false);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : 'Не удалось сохранить реакцию. Обновите ответы.',
+        cause instanceof Error
+          ? cause.message
+          : t('Could not save the reaction. Refresh the replies.'),
       );
     } finally {
       setPending(false);
@@ -56,15 +59,15 @@ export function MessageReactions({
   };
   if (!onReact && !comment.reactions?.length) return null;
   return (
-    <div className="message-reactions" ref={ref} aria-label="Реакции к сообщению">
+    <div className="message-reactions" ref={ref} aria-label={t('Message reactions')}>
       <div className="message-reaction-buttons">
         {onReact && (
           <button
             type="button"
             ref={toggle}
             className="reaction-add"
-            aria-label="Добавить реакцию"
-            title="Добавить реакцию"
+            aria-label={t('Add reaction')}
+            title={t('Add reaction')}
             aria-expanded={open}
             aria-controls={pickerId}
             disabled={pending}
@@ -80,8 +83,8 @@ export function MessageReactions({
               type="button"
               key={content}
               className={`reaction-count ${reaction.viewerHasReacted ? 'mine' : ''}`}
-              aria-label={`${label}: ${reaction.count}${reaction.viewerHasReacted ? ' · ваша реакция' : ''}`}
-              title={`${label}${reaction.viewerHasReacted ? ' · нажмите, чтобы снять свою реакцию' : ''}`}
+              aria-label={`${label}: ${reaction.count}${reaction.viewerHasReacted ? t(' · your reaction') : ''}`}
+              title={`${label}${reaction.viewerHasReacted ? t(' · click to remove your reaction') : ''}`}
               aria-pressed={!!reaction.viewerHasReacted}
               disabled={!onReact || pending}
               onClick={() => void react(content)}
@@ -93,7 +96,12 @@ export function MessageReactions({
         })}
       </div>
       {open && (
-        <div className="reaction-picker" id={pickerId} role="group" aria-label="Выберите реакцию">
+        <div
+          className="reaction-picker"
+          id={pickerId}
+          role="group"
+          aria-label={t('Choose a reaction')}
+        >
           {REACTIONS.map(({ content, emoji, label }) => (
             <button
               type="button"

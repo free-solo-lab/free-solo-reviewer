@@ -1,6 +1,7 @@
 import { Markdown } from './Markdown';
 import type { ScenarioChange } from '../shared/scenario-changes';
 import { reviewDescription } from '../shared/review-description';
+import { t } from '../shared/i18n';
 export function ScenarioDescription({
   summary,
   change,
@@ -17,12 +18,13 @@ export function ScenarioDescription({
       {change && (
         <div className="scenario-revision-note">
           {change.kind === 'added'
-            ? 'Новый сценарий после прошлого ревью'
-            : 'Изменения после прошлого ревью выделены'}{' '}
-          · +{[...change.steps.values()].filter((value) => value === 'added').length} вызовов ·{' '}
+            ? t('New scenario since the last review')
+            : t('Changes since the last review are highlighted')}{' '}
+          · +{[...change.steps.values()].filter((value) => value === 'added').length} {t('calls ·')}{' '}
           {change.steps.size -
             [...change.steps.values()].filter((value) => value === 'added').length}{' '}
-          изменено · −{change.removed.length}
+          {t('changed · −')}
+          {change.removed.length}
         </div>
       )}
       {change ? (
@@ -36,7 +38,7 @@ export function ScenarioDescription({
       )}
       {!!change?.removed.length && (
         <div className="scenario-removed-calls">
-          <strong>Убрано после прошлого ревью</strong>
+          <strong>{t('Removed since the last review')}</strong>
           <ul>
             {change.removed.map((step) => (
               <li key={step.id}>{step.label}</li>
@@ -46,7 +48,7 @@ export function ScenarioDescription({
       )}
       {change?.previous && change.previous.summary !== summary && (
         <details className="scenario-before-description">
-          <summary>Описание до исправлений</summary>
+          <summary>{t('Description before the fixes')}</summary>
           <Markdown>{reviewDescription(change.previous.summary, 'scenario')}</Markdown>
         </details>
       )}

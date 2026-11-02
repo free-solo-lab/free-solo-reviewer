@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Snapshot } from '../shared/model';
 import { reviewFilePath, type FileViewStatus } from '../shared/viewed-files';
 import { api } from './api';
+import { errorMessage } from '../shared/errors';
+import { t } from '../shared/i18n';
 const key = (snapshot: Snapshot, path: string) =>
   JSON.stringify([snapshot.id, reviewFilePath(snapshot, path)]);
 export function useViewedFiles(sessionId: string | undefined, snapshots: Snapshot[]) {
@@ -38,9 +40,7 @@ export function useViewedFiles(sessionId: string | undefined, snapshots: Snapsho
       }
     } catch (cause) {
       if (active.current === context && serial === request.current)
-        setError(
-          `Не удалось загрузить отметки просмотра: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
+        setError(t('Could not load viewed marks: {0}', errorMessage(cause)));
     } finally {
       if (active.current === context && serial === request.current) setLoading(false);
     }
@@ -66,9 +66,7 @@ export function useViewedFiles(sessionId: string | undefined, snapshots: Snapsho
       await reloadRef.current();
     } catch (cause) {
       if (active.current === context)
-        setError(
-          `Не удалось сохранить отметку просмотра: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
+        setError(t('Could not save the viewed mark: {0}', errorMessage(cause)));
     } finally {
       setPending((previous) => {
         const next = new Set(previous);

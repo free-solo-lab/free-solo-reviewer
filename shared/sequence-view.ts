@@ -1,9 +1,11 @@
-import type { Evidence, SourceIndex } from './model.js';
+import { stepDescription } from './step-description.js';
+import { evidenceService } from './source-service.js';
+import type { Evidence, SourceIndex, Snapshot } from './model.js';
 import { databaseOwner, overlaps, type SequenceScenario } from './sequence.js';
-import { serviceGroups } from './graph.js';
 import { withExternalBoundary } from './sequence-boundary.js';
 import { databaseMethod } from './sequence-method.js';
 import { indexedCallChain, sameInvocation } from './sequence-calls.js';
+import { t } from './i18n.js';
 
 export interface SequenceParticipant {
   id: string;
@@ -24,6 +26,7 @@ export function sequenceView(
   source: SequenceScenario,
   indexes: SourceIndex[],
   collapsed: ReadonlySet<string> = new Set(),
+  snapshots: Snapshot[] = [],
 ) {
   source = withExternalBoundary(source, indexes);
   const participants = new Map<string, SequenceParticipant>();
@@ -33,7 +36,7 @@ export function sequenceView(
       participants.set(id, {
         id,
         owner,
-        label: id.startsWith('external:') ? 'Внешний клиент' : id,
+        label: id.startsWith('external:') ? t('External client') : id,
         kind: id.startsWith('external:') ? 'external' : databaseOwner(id) ? 'database' : 'service',
       });
     return id;
@@ -79,6 +82,7 @@ export function sequenceView(
   const steps: SequenceScenario['steps'] = [];
   const transactionScopes = { ...source.transactionScopes };
   for (let step of source.steps) {
+    step = { ...step, description: stepDescription(step) };
     let from = service(step.from),
       to = service(step.to);
     if (step.kind === 'database') {
@@ -134,6 +138,7 @@ export function sequenceView(
           steps.push({
             ...step,
             id,
+            description: undefined,
             from: callerId,
             to: calleeId,
             kind: 'call',
@@ -174,12 +179,13 @@ export function sequenceView(
             steps.push({
               ...step,
               id,
+              description: undefined,
               from: callerId,
               to: from,
               label: `${fileClass(caller)} → ${fileClass(leaf)}${method ? `.${method.name}` : ''}`,
               kind: 'call',
               confidence: 'inferred',
-              branch: 'Внутренний вызов восстановлен по ссылкам на код',
+              branch: t('Internal call rebuilt from code references'),
             });
           transactionScopes[id] = source.transactionScopes?.[step.id] ?? [];
         }
@@ -248,13 +254,46 @@ export function sequenceView(
     }
     steps.push({ ...step, from, to });
   }
-  const owners = [
-    ...new Set(
-      serviceGroups(source)
-        .flat()
-        .map((id) => databaseOwner(id) ?? id),
-    ),
-  ];
+  for (const participant of [...participants.values()]) {
+    if (participant.kind !== 'class' || !participant.evidence) continue;
+    const owner = evidenceService(snapshots, participant.evidence);
+    if (!owner || owner.id === participant.owner) continue;
+    participant.owner = owner.id;
+    if (!participants.has(owner.id))
+      participants.set(owner.id, {
+        id: owner.id,
+        owner: owner.id,
+        label: owner.name,
+        kind: 'service',
+      });
+  }
+  for (const step of steps) {
+    const target = participants.get(step.to);
+    if (target?.kind !== 'database') continue;
+    const owner = participants.get(step.from)?.owner;
+    if (!owner || owner === target.owner) continue;
+    const id = `database:${owner}`;
+    participants.set(id, {
+      id,
+      owner,
+      label: participants.get(owner)?.label ?? owner,
+      kind: 'database',
+    });
+    step.to = id;
+  }
+  const used = new Set(steps.flatMap((s) => [s.from, s.to]));
+  const classOwners = new Set(
+    [...participants.values()].filter((p) => p.kind === 'class').map((p) => p.owner),
+  );
+  for (const [id, p] of participants) {
+    if (
+      ((p.kind === 'service' && !classOwners.has(id)) || p.kind === 'database') &&
+      !used.has(id) &&
+      [...classOwners].some((owner) => owner.startsWith(`service:${databaseOwner(id) ?? id}:`))
+    )
+      participants.delete(id);
+  }
+  const owners = [...new Set([...participants.values()].map((p) => p.owner))];
   const internalCount = new Map<string, number>();
   const visible = steps
     .filter((step) => step.from !== step.to)

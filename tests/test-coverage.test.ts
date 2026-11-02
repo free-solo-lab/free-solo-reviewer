@@ -28,12 +28,21 @@ describe('test path detection', () => {
       'test/Reader.java',
       'src/integrationTest/kotlin/ReaderTests.kt',
       'src/main/kotlin/ReaderSpec.kt',
+      'web/src/components/OrderForm.test.tsx',
+      'web/src/api/orders.spec.ts',
+      'web/src/components/__tests__/OrderForm.tsx',
+      'web/e2e/checkout.ts',
+      'web/cypress/e2e/login.cy.js',
     ])
       expect(isTestPath(path), path).toBe(true);
     for (const path of [
       'src/main/kotlin/Reader.kt',
       'src/main/kotlin/TestDataFactory.kt',
       'src/main/kotlin/contest/Reader.kt',
+      'web/src/components/OrderForm.tsx',
+      'web/src/components/OrderForm.stories.tsx',
+      'web/src/testing-library-setup.ts',
+      'web/src/latest/specification.ts',
     ])
       expect(isTestPath(path), path).toBe(false);
   });
@@ -44,7 +53,15 @@ describe('test catalog coverage', () => {
       second = method('rejects', '@org.junit.jupiter.params.ParameterizedTest');
     const old = { ...first, evidence: { ...first.evidence, side: 'base' as const } };
     const helper = method('setup', '@BeforeEach');
-    const snapshots = [{ repoId: 'repo', headFiles: [first.evidence.path] }] as Snapshot[];
+    const snapshots = [
+      {
+        repoId: 'repo',
+        headFiles: [first.evidence.path],
+        files: [
+          { path: first.evidence.path, status: 'A', patch: '', addedLines: [10], removedLines: [] },
+        ],
+      },
+    ] as unknown as Snapshot[];
     const indexes = [{ methods: [first, second, old, helper] }] as SourceIndex[];
     const test = { method: 'reads a record', evidence: [first.evidence] } as ReviewTest;
     expect(reviewTestMethods(snapshots, indexes)).toEqual([first, second]);

@@ -53,6 +53,12 @@ export function tableDiffEvidence(table: SchemaTable, snapshot: Snapshot): Evide
   );
 }
 export interface DatabaseSchema {
+  /** A module/database scope; repoId and evidence remain canonical repository identifiers. */
+  serviceId?: string;
+  serviceName?: string;
+  serviceDir?: string;
+  /** A repository containing multiple independent service schemas. */
+  services?: DatabaseSchema[];
   snapshotId: string;
   repoId: string;
   repoName: string;
@@ -62,6 +68,8 @@ export interface DatabaseSchema {
   warnings: string[];
   migrations?: SchemaMigration[];
 }
+export const databaseServiceId = (schema: DatabaseSchema) => schema.serviceId ?? schema.repoId;
+
 export interface SchemaMigration {
   path: string;
   name: string;
@@ -132,6 +140,8 @@ export function compareSchemas(before: SchemaTable[], after: SchemaTable[]): Sch
 }
 
 /** Place referenced tables to the left. Cycles remain visible without recursive layout. */
+/** At most this many table columns side by side before the schema wraps to a new row. */
+export const SCHEMA_ROW_COLUMNS = 4;
 export function schemaPositions(tables: SchemaTable[]) {
   const levels = new Map<string, number>();
   const level = (name: string, path = new Set<string>()): number => {
@@ -149,10 +159,11 @@ export function schemaPositions(tables: SchemaTable[]) {
     return value;
   };
   tables.forEach((table) => level(table.name));
-  const componentColumns = new Map<string, number>();
-  let offset = 0;
+  // Tables linked by foreign keys form a group laid out parents-first, left to right.
+  const grouped = new Set<string>();
+  const components: SchemaTable[][] = [];
   for (const table of tables) {
-    if (componentColumns.has(table.name)) continue;
+    if (grouped.has(table.name)) continue;
     const component = new Set<string>();
     const visit = (name: string) => {
       if (component.has(name)) return;
@@ -164,17 +175,30 @@ export function schemaPositions(tables: SchemaTable[]) {
         } else if (other.foreignKeys.some((key) => key.target === name)) visit(other.name);
     };
     visit(table.name);
-    for (const name of component) componentColumns.set(name, offset);
-    offset += Math.max(...[...component].map((name) => levels.get(name) ?? 0)) + 1;
+    component.forEach((name) => grouped.add(name));
+    components.push(tables.filter((item) => component.has(item.name)));
   }
-  const cursors = new Map<number, number>();
+  // Groups fill rows of a few columns, so many unrelated tables wrap instead of one long line.
   const positions = new Map<string, { x: number; y: number; height: number }>();
-  for (const table of tables) {
-    const col = (levels.get(table.name) ?? 0) + (componentColumns.get(table.name) ?? 0),
-      y = cursors.get(col) ?? 30;
-    const height = 68 + table.columns.length * 30 + 34 + table.indexes.length * 30;
-    positions.set(table.name, { x: 30 + col * 470, y, height });
-    cursors.set(col, y + height + 80);
+  let rowColumn = 0,
+    rowTop = 30,
+    rowBottom = 30;
+  for (const component of components) {
+    const width = Math.max(...component.map((table) => levels.get(table.name) ?? 0)) + 1;
+    if (rowColumn > 0 && rowColumn + width > SCHEMA_ROW_COLUMNS) {
+      rowColumn = 0;
+      rowTop = rowBottom + 80;
+    }
+    const cursors = new Map<number, number>();
+    for (const table of component) {
+      const col = levels.get(table.name) ?? 0,
+        y = cursors.get(col) ?? rowTop;
+      const height = 68 + table.columns.length * 30 + 34 + table.indexes.length * 30;
+      positions.set(table.name, { x: 30 + (rowColumn + col) * 470, y, height });
+      cursors.set(col, y + height + 80);
+      rowBottom = Math.max(rowBottom, y + height);
+    }
+    rowColumn += width;
   }
   return {
     positions,

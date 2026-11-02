@@ -1,10 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { reviewMarkLabels, type ReviewMark } from '../shared/review-markers';
 import { groupTests } from '../shared/test-groups';
 import { SequenceCanvas } from './SequenceCanvas';
+import { Icon } from './icons';
 import { reviewTestMethods, missingTestMethods } from '../shared/test-coverage';
 import type { Evidence, ReviewTest, Scenario, Snapshot, SourceIndex } from '../shared/model';
+import { ViewSwitch, type ItemView } from './ui/ViewSwitch';
+import { t } from '../shared/i18n';
 
-const kinds = { setup: 'Подготовка', mock: 'Мок', call: 'Вызов', assertion: 'Проверка' };
+const kinds = {
+  setup: t('Preparation'),
+  mock: t('Mock'),
+  call: t('Call'),
+  assertion: t('Assertion'),
+};
+const roles = {
+  input: t('Input'),
+  output: t('Result'),
+  mock: t('Mock'),
+  expected: t('Expected'),
+  fixture: t('Fixture'),
+};
 const split = (text: string, length: number) =>
   text.match(new RegExp(`.{1,${length}}`, 'g'))?.slice(0, 2) ?? [text];
 
@@ -46,7 +62,7 @@ function TestSequence({
         className={source ? 'test-class-code-link' : undefined}
         role={source ? 'button' : undefined}
         tabIndex={source ? 0 : undefined}
-        aria-label={source ? `Открыть весь код класса ${name}` : undefined}
+        aria-label={source ? t('Open the whole code of class {0}', name) : undefined}
         onClick={source ? () => onSource(source) : undefined}
         onKeyDown={
           source
@@ -59,7 +75,7 @@ function TestSequence({
             : undefined
         }
       >
-        <title>{source ? `${name} · открыть весь код класса` : name}</title>
+        <title>{source ? t('{0} · open the whole class code', name) : name}</title>
         <rect x={x(name) - 96} y={16} width={192} height={48} rx={7} className="test-participant" />
         <text x={x(name)} y={38} textAnchor="middle" className="test-participant-name">
           {split(name, 27).map((line, index) => (
@@ -85,7 +101,7 @@ function TestSequence({
           width={width}
           height={height}
           role="img"
-          aria-label={`Шаги теста ${test.title}`}
+          aria-label={t('Steps of test {0}', test.title)}
         >
           <defs>
             {Object.keys(kinds).map((kind) => (
@@ -164,7 +180,7 @@ function TestSequence({
                 >
                   {kinds[step.kind]}
                   {step.data.length
-                    ? ` · ${step.data.length} ${step.data.length === 1 ? 'модель / набор данных' : 'моделей / наборов данных'}`
+                    ? ` · ${step.data.length} ${step.data.length === 1 ? t('model / data set') : t('models / data sets')}`
                     : ''}
                 </text>
                 {!!step.data.length && (
@@ -181,12 +197,68 @@ function TestSequence({
                       .slice(0, 64)}
                   </text>
                 )}
-                <title>Открыть код теста и оставить комментарий</title>
+                <title>{t('Open the test code and leave a comment')}</title>
               </g>
             );
           })}
         </svg>
       </SequenceCanvas>
+    </div>
+  );
+}
+
+/** What the test does, step by step, with the data each step prepares or checks. */
+function TestDescription({
+  test,
+  onSource,
+}: {
+  test: ReviewTest;
+  onSource: (ref: Evidence) => void;
+}) {
+  return (
+    <div className="test-description">
+      <p className="test-short-summary">{test.summary}</p>
+      {!!test.steps.length && (
+        <ol className="test-steps">
+          {test.steps.map((step) => {
+            const ref = step.evidence[0] ?? test.evidence[0];
+            return (
+              <li key={step.id}>
+                <div className="test-step-head">
+                  <span className={`test-step-badge ${step.kind}`}>{kinds[step.kind]}</span>
+                  {ref ? (
+                    <button
+                      className="text-button"
+                      title={t('Open the step code')}
+                      onClick={() => onSource(ref)}
+                    >
+                      {step.label}
+                    </button>
+                  ) : (
+                    <span>{step.label}</span>
+                  )}
+                </div>
+                {step.from !== step.to && (
+                  <small className="test-step-route">
+                    {step.from} → {step.to}
+                  </small>
+                )}
+                {!!step.data.length && (
+                  <ul className="test-step-data">
+                    {step.data.map((data, index) => (
+                      <li key={index}>
+                        <span>{roles[data.role]}</span> {data.label}
+                        {data.type && <small> · {data.type}</small>}
+                        {data.value && <code>{data.value}</code>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
 }
@@ -201,7 +273,20 @@ export function TestsView({
   canAnalyze,
   onAnalyze,
   onSource,
+  revisionMarks,
+  showingPrevious,
+  onLatest,
+  view,
+  onView,
+  code,
 }: {
+  /** A test is shown as its description, its code or its step diagram, like a scenario. */
+  view: ItemView;
+  onView: (view: ItemView) => void;
+  code: (test: ReviewTest) => ReactNode;
+  revisionMarks?: Map<string, ReviewMark>;
+  showingPrevious?: boolean;
+  onLatest?: () => void;
   tests: ReviewTest[];
   scenarios: Scenario[];
   indexes: SourceIndex[];
@@ -215,17 +300,21 @@ export function TestsView({
   const [selected, setSelected] = useState('');
   const [search, setSearch] = useState('');
   const [repo, setRepo] = useState('all');
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
-  const total = reviewTestMethods(snapshots, indexes).length;
-  const missing = missingTestMethods(snapshots, indexes, tests).length;
+  // Both walk the call graph; typing in the search must not repeat them.
+  const total = useMemo(() => reviewTestMethods(snapshots, indexes).length, [snapshots, indexes]);
+  const missing = useMemo(
+    () => missingTestMethods(snapshots, indexes, tests).length,
+    [snapshots, indexes, tests],
+  );
   const key = snapshots.map((snapshot) => snapshot.id).join(',');
   useEffect(() => {
     setSelected('');
     setError('');
     setRepo('all');
     setSearch('');
-    setCollapsed(new Set());
+    setExpanded(new Set());
   }, [key]);
   const groups = useMemo(
     () =>
@@ -236,16 +325,27 @@ export function TestsView({
       )
         .map((group) => ({
           ...group,
-          tests: group.tests.filter((test) =>
-            `${group.title} ${test.title} ${test.summary} ${test.method} ${test.evidence.map((ref) => ref.path).join(' ')}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-          ),
+          tests: group.tests
+            .filter((test) =>
+              `${group.title} ${test.title} ${test.summary} ${test.method} ${test.evidence.map((ref) => ref.path).join(' ')}`
+                .toLowerCase()
+                .includes(search.toLowerCase()),
+            )
+            .sort(
+              (a, b) =>
+                Number(revisionMarks?.has(b.id) ?? false) -
+                Number(revisionMarks?.has(a.id) ?? false),
+            ),
         }))
-        .filter((group) => group.tests.length),
-    [tests, scenarios, indexes, repo, search],
+        .filter((group) => group.tests.length)
+        .sort(
+          (a, b) =>
+            Number(b.tests.some((test) => revisionMarks?.has(test.id))) -
+            Number(a.tests.some((test) => revisionMarks?.has(test.id))),
+        ),
+    [tests, scenarios, indexes, repo, search, revisionMarks],
   );
-  const isCollapsed = (id: string) => collapsed.has(id);
+  const isCollapsed = (id: string) => !expanded.has(id);
   const visible = groups.filter((group) => !isCollapsed(group.id)).flatMap((group) => group.tests);
   const current = visible.find((test) => test.id === selected) ?? visible[0];
   const activeGroup = groups.find((group) => group.tests.some((test) => test.id === current?.id));
@@ -253,10 +353,10 @@ export function TestsView({
   const goToGroup = (id: string, closeCurrent = false) => {
     const group = groups.find((item) => item.id === id);
     if (!group) return;
-    setCollapsed((previous) => {
+    setExpanded((previous) => {
       const next = new Set(previous);
-      if (closeCurrent && activeGroup) next.add(activeGroup.id);
-      next.delete(id);
+      if (closeCurrent && activeGroup) next.delete(activeGroup.id);
+      next.add(id);
       return next;
     });
     setSelected(group.tests[0].id);
@@ -266,17 +366,20 @@ export function TestsView({
       goToGroup(id);
       return;
     }
-    setCollapsed((previous) => new Set(previous).add(id));
-    if (activeGroup?.id === id && nextGroup) goToGroup(nextGroup.id);
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
   };
   return (
     <>
-      <aside className="secondary-menu tests-menu" aria-label="Меню тестов">
+      <aside className="secondary-menu tests-menu" aria-label={t('Tests menu')}>
         <div className="tests-menu-heading">
-          <h2>Тесты</h2>
+          <h2>{t('Tests')}</h2>
           <span
             title={
-              missing ? `Разобрано ${total - missing} из ${total} тестовых методов` : undefined
+              missing ? t('Analyzed {0} of {1} test methods', total - missing, total) : undefined
             }
           >
             {missing ? `${total - missing} / ${total}` : tests.length}
@@ -284,21 +387,21 @@ export function TestsView({
         </div>
         <div className="tests-filter">
           <input
-            aria-label="Поиск теста"
-            placeholder="Найти тест…"
+            aria-label={t('Search tests')}
+            placeholder={t('Find a test…')}
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
-              setCollapsed(new Set());
+              setExpanded(new Set());
             }}
           />
           {snapshots.length > 1 && (
             <select
-              aria-label="Сервис теста"
+              aria-label={t('Test service')}
               value={repo}
               onChange={(event) => setRepo(event.target.value)}
             >
-              <option value="all">Все сервисы</option>
+              <option value="all">{t('All services')}</option>
               {snapshots.map((snapshot) => (
                 <option key={snapshot.repoId} value={snapshot.repoId}>
                   {snapshot.repoName}
@@ -307,32 +410,68 @@ export function TestsView({
             </select>
           )}
         </div>
-        <nav className="test-list" aria-label="Тесты по сценариям">
+        {revisionMarks && (
+          <div className="menu-revision-summary">
+            {t('Since the last review ·')}{' '}
+            {tests.filter((test) => revisionMarks.has(test.id)).length} {t('tests')}
+            {showingPrevious && (
+              <button className="text-button" onClick={onLatest}>
+                {t('Show the latest version →')}
+              </button>
+            )}
+          </div>
+        )}
+        <nav className="test-list" aria-label={t('Tests by scenario')}>
           {groups.map((group) => (
             <section className="test-group" key={group.id}>
               <button
                 className="test-group-toggle"
                 aria-expanded={!isCollapsed(group.id)}
                 aria-controls={`test-group-${group.id}`}
+                title={group.title}
                 onClick={() => toggleGroup(group.id)}
               >
                 <span className="test-group-chevron" aria-hidden="true">
-                  {isCollapsed(group.id) ? '▸' : '▾'}
+                  <Icon name={isCollapsed(group.id) ? 'chevronRight' : 'chevronDown'} size={13} />
                 </span>
                 <strong>{group.title}</strong>
                 <small>{group.tests.length}</small>
+                {group.tests.some((test) => revisionMarks?.has(test.id)) && (
+                  <span
+                    className="review-revision-dot"
+                    title={t(
+                      'Changed since the last review: {0}',
+                      group.tests.filter((test) => revisionMarks?.has(test.id)).length,
+                    )}
+                    aria-label={t('Changed since the last review')}
+                  />
+                )}
               </button>
               {!isCollapsed(group.id) && (
                 <div id={`test-group-${group.id}`} className="test-group-items">
                   {group.tests.map((test) => (
                     <button
                       key={test.id}
+                      data-menu-item
                       className={current?.id === test.id ? 'active' : ''}
                       aria-current={current?.id === test.id ? 'true' : undefined}
-                      title={test.summary}
+                      title={`${test.summary}${revisionMarks?.has(test.id) ? t(' · Since the last review') : ''}`}
                       onClick={() => setSelected(test.id)}
                     >
-                      {test.title}
+                      <span>{test.title}</span>
+                      {revisionMarks?.has(test.id) && (
+                        <span
+                          className={`review-revision-dot ${revisionMarks.get(test.id)}`}
+                          title={t(
+                            '{0} since the last review',
+                            reviewMarkLabels[revisionMarks.get(test.id)!],
+                          )}
+                          aria-label={t(
+                            '{0} since the last review',
+                            reviewMarkLabels[revisionMarks.get(test.id)!],
+                          )}
+                        />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -340,13 +479,13 @@ export function TestsView({
             </section>
           ))}
           {!groups.length && (
-            <p className="tests-menu-empty">{search ? 'Тесты не найдены' : 'Нет тестов'}</p>
+            <p className="tests-menu-empty">{search ? t('No tests found') : t('No tests')}</p>
           )}
         </nav>
       </aside>
       <div className="tests-toolbar">
         <div>
-          <strong>{activeGroup?.title ?? 'Тесты'}</strong>
+          <strong>{activeGroup?.title ?? t('Tests')}</strong>
         </div>
         {canAnalyze && !ready && (
           <button
@@ -357,7 +496,7 @@ export function TestsView({
               void onAnalyze().catch((error) => setError(error.message));
             }}
           >
-            {running ? 'Codex разбирает тесты…' : 'Дополнить разбор тестов'}
+            {running ? t('Codex is analyzing tests…') : t('Complete the test analysis')}
           </button>
         )}
         {activeGroup && (
@@ -366,12 +505,12 @@ export function TestsView({
             disabled={!nextGroup}
             onClick={() => nextGroup && goToGroup(nextGroup.id, true)}
           >
-            Следующий сценарий →
+            {t('Next scenario →')}
           </button>
         )}
       </div>
       {error && (
-        <div role="alert" className="panel analysis-error">
+        <div role="alert" className="alert error">
           {error}
         </div>
       )}
@@ -382,31 +521,43 @@ export function TestsView({
               <h3>{current.title}</h3>
               <code>{current.method}</code>
             </div>
-            {current.evidence[0] && (
-              <button onClick={() => onSource(current.evidence[0])}>Код и комментарий →</button>
-            )}
+            <ViewSwitch
+              view={view}
+              onView={onView}
+              label={t('Test view')}
+              diagram={current.steps.length > 0}
+            />
           </div>
-          <p className="test-short-summary">{current.summary}</p>
-          <div className="test-legend">
-            {Object.entries(kinds).map(([kind, label]) => (
-              <span key={kind} className={kind}>
-                {label}
-              </span>
-            ))}
-          </div>
-          <TestSequence test={current} indexes={indexes} onSource={onSource} />
+          {view === 'code' ? (
+            code(current)
+          ) : view === 'diagram' && current.steps.length ? (
+            <>
+              <div className="test-legend">
+                {Object.entries(kinds).map(([kind, label]) => (
+                  <span key={kind} className={kind}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+              <TestSequence test={current} indexes={indexes} onSource={onSource} />
+            </>
+          ) : (
+            <TestDescription test={current} onSource={onSource} />
+          )}
         </section>
       ) : (
         <div className="tests-workspace-empty inline-empty">
           {groups.length
-            ? 'Выберите сценарий в меню слева.'
+            ? t('Choose a scenario in the menu on the left.')
             : search
-              ? 'Тесты не найдены по запросу.'
+              ? t('No tests match the search.')
               : ready
-                ? 'В переданном контексте не найдено тестов с проверяемыми ссылками.'
+                ? t('No tests with verifiable references were found in the provided context.')
                 : canAnalyze
-                  ? 'Нажмите «Дополнить разбор тестов»: Codex подготовит краткие описания, вызовы, проверки и данные моков. Тесты не запускаются.'
-                  : 'Разбор тестов для этой сохранённой версии отсутствует.'}
+                  ? t(
+                      'Press “Complete the test analysis”: Codex prepares short descriptions, calls, assertions and mock data. Tests are not run.',
+                    )
+                  : t('There is no test analysis for this saved version.')}
         </div>
       )}
     </>

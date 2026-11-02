@@ -15,6 +15,24 @@ const endpoint = (method: IndexedMethod) =>
 const key = (method: IndexedMethod) =>
   `${method.evidence.repoId}:${method.evidence.side}:${method.evidence.path}:${method.evidence.startLine}`;
 
+/** A reference to the handler can also be the destination of an internal return. */
+function isEntryResponse(step: SequenceScenario['steps'][number], entry: IndexedMethod) {
+  const segments = step.label.split(/\s*(?:→|->)\s*/);
+  if (segments.length > 1) {
+    const sender = segments[0].trim().match(/^([\w$]+)(?:\.[\w$]+(?:\([^)]*\))?)?$/)?.[1];
+    if (sender) return sender.toLowerCase() === owner(entry).toLowerCase();
+  }
+  // Without an explicit sender, only handler-only source evidence establishes
+  // the outer response. Mixed helper/handler evidence is an internal or unknown edge.
+  return !step.evidence.some(
+    (ref) =>
+      ref.repoId === entry.evidence.repoId &&
+      ref.side === entry.evidence.side &&
+      /\.(java|kt)$/.test(ref.path) &&
+      ref.path !== entry.evidence.path,
+  );
+}
+
 /** Expose an API boundary only when a unique indexed entry/call chain supports it. */
 export function withExternalBoundary(
   source: SequenceScenario,
@@ -114,6 +132,7 @@ export function withExternalBoundary(
       step.kind === 'return' &&
       step.from === first.from &&
       step.to === first.to &&
+      isEntryResponse(step, entry) &&
       step.evidence.some((ref) => overlaps(ref, entry.evidence))
     ) {
       return {

@@ -151,6 +151,38 @@ async function finished(manager: AnalysisManager, id: string) {
 }
 
 describe('scenario catalog completeness', () => {
+  it('checks changed public library methods without requesting unchanged methods or private helpers', async () => {
+    const { snapshot, index } = await setup();
+    const path = 'packages/libs/fraudo/src/main/java/RulesVisitor.java';
+    snapshot.headFiles.push(path);
+    snapshot.files = [{ path, status: 'M', patch: '', addedLines: [3, 13], removedLines: [] }];
+    index.methods = [
+      {
+        name: 'visitPayout',
+        signature: 'public Result visitPayout()',
+        calls: [],
+        annotations: [],
+        evidence: { repoId: snapshot.repoId, side: 'head', path, startLine: 2, endLine: 5 },
+      },
+      {
+        name: 'unchanged',
+        signature: 'public Result unchanged()',
+        calls: [],
+        annotations: [],
+        evidence: { repoId: snapshot.repoId, side: 'head', path, startLine: 7, endLine: 10 },
+      },
+      {
+        name: 'helper',
+        signature: 'private Result helper()',
+        calls: [],
+        annotations: [],
+        evidence: { repoId: snapshot.repoId, side: 'head', path, startLine: 12, endLine: 15 },
+      },
+    ];
+    const roots = scenarioRoots([snapshot], [index]);
+    expect(roots.map((r) => r.name)).toEqual(['RulesVisitor.visitPayout']);
+    expect(missingScenarios(roots, [])).toHaveLength(1);
+  });
   it('marks an older cached partial catalog as partial without making any model request', async () => {
     const { session, store } = await setup();
     let calls = 0;

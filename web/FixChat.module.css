@@ -1,0 +1,278 @@
+.fixChatWindow {
+  width: min(820px, calc(100vw - 32px));
+  height: min(760px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fafafa;
+  overflow: hidden;
+  box-shadow: 0 16px 70px #21212144;
+}
+.fixChatHeading,
+.fixChatContext,
+.fixChatCompose {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.fixChatHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.fixChatHeading h2 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+.fixChatHeading small,
+.fixChatContext span {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.fixChatContext {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fixChatContext select {
+  max-width: 220px;
+  font-size: 12px;
+  padding: 4px 24px 4px 8px;
+}
+.fixChatMessages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px;
+}
+.fixChatEvent {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  background: #fff;
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.fixChatEvent.user {
+  margin-left: 48px;
+  background: #f1eaf8;
+  border-color: #d9cae8;
+}
+.fixChatEvent.status {
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  white-space: pre-wrap;
+  padding: 2px 12px;
+  font-size: 12px;
+}
+.fixChatEvent.plan ul {
+  padding: 0;
+  list-style: none;
+}
+.fixChatEvent.plan li {
+  padding: 3px 0;
+}
+.fixChatEvent.plan .done {
+  color: #658752;
+}
+.fixChatEvent pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.fixChatEvent summary {
+  cursor: pointer;
+}
+.fixChatCompose {
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+}
+.fixChatCompose textarea {
+  width: 100%;
+  min-height: 44px;
+  max-height: 140px;
+  border-radius: var(--radius-lg);
+  resize: none;
+}
+.fixChatActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.fixChatEvent.request {
+  background: #f9f9f9;
+  border-color: #ddc883;
+}
+.fixChatEvent.request small {
+  color: #837047;
+}
+.fixQuestionOptions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.fixQuestionOptions button {
+  white-space: normal;
+  text-align: left;
+}
+.fixWaitingLabel {
+  margin-bottom: 8px;
+  color: #8a6a22;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fixPlan {
+  margin: 0 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.fixPlan header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+.fixPlan header small {
+  color: var(--muted);
+}
+.fixPlan ol {
+  display: grid;
+  gap: 2px;
+  max-height: 200px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.fixPlan li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+.fixPlan li:hover {
+  background: var(--hover);
+}
+.fixPlan li :global(.text-button) {
+  margin: 0 0 0 auto;
+  padding: 0;
+  white-space: nowrap;
+}
+.stepActions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  margin-left: auto;
+}
+.stepActions :global(.text-button):first-child {
+  color: var(--muted);
+}
+.skipped > div > div {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.stepMark {
+  flex-shrink: 0;
+  width: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+.done .stepMark {
+  color: var(--green);
+}
+.done .stepText {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.running .stepMark {
+  color: var(--orange);
+}
+.failed .stepMark {
+  color: var(--red);
+  font-weight: 700;
+}
+.stepText {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.stepRef {
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+}
+.stepRef:hover {
+  color: var(--green);
+  text-decoration: underline;
+}
+.stepHistory {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.stepHistory summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.stepHistory > ol {
+  margin-top: 6px;
+  max-height: 240px;
+}
+.stepHistory li > div {
+  min-width: 0;
+  white-space: pre-wrap;
+  color: var(--text-2);
+}
+.stepHistory li > div > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.stepHistory .stepMark {
+  color: var(--green);
+}
+
+.embedded {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.embedded .fixChatCompose textarea {
+  min-height: 36px;
+}
+.embedded .fixChatContext {
+  padding: 5px 12px;
+}
+
+.embedded .fixPlan {
+  max-height: 100px;
+  overflow: auto;
+  flex-shrink: 0;
+  padding: 4px 0;
+}
+.embedded .fixChatMessages {
+  min-height: 50px;
+}
+.embedded .fixChatCompose {
+  flex-shrink: 0;
+  padding: 5px 12px;
+}
+.embedded .fixChatActions {
+  margin-top: 4px;
+}

@@ -1,4 +1,5 @@
 import type { Evidence, IndexedMethod, ReviewTest, Scenario, SourceIndex } from './model.js';
+import { t } from './i18n.js';
 
 export interface TestGroup {
   id: string;
@@ -111,7 +112,7 @@ export function groupTests(
         ? scores[0].scenario
         : undefined;
     const source = test.evidence[0];
-    const subject = className(source?.path ?? '') || 'Другие проверки';
+    const subject = className(source?.path ?? '') || t('Other checks');
     const id = match ? `scenario:${match.id}` : `class:${source?.repoId}:${source?.path}`;
     const group = groups.get(id) ?? { id, title: match?.title ?? subject, tests: [] };
     group.tests.push(test);

@@ -1,8 +1,8 @@
 import type { IndexedMethod, ReviewTest, Snapshot, SourceIndex } from './model.js';
 import { overlaps } from './sequence.js';
+import { onHead, relevantTestMethods, testPath } from './analysis-scope.js';
 
-export const isTestPath = (path: string) =>
-  /(?:^|\/)(?:test|tests)\/|(?:Test|Tests|Spec)\.(?:java|kt)$/.test(path);
+export const isTestPath = testPath;
 const normalize = (name: string) => name.replace(/`/g, '').replace(/\(\)$/, '').trim();
 export function testMatchesMethod(test: ReviewTest, method: IndexedMethod): boolean {
   const name = normalize(test.method),
@@ -14,15 +14,15 @@ export function testMatchesMethod(test: ReviewTest, method: IndexedMethod): bool
 }
 
 /** One entry per annotated test method, including parameterized tests; exclude setup/helpers. */
-export function reviewTestMethods(snapshots: Snapshot[], indexes: SourceIndex[]): IndexedMethod[] {
-  return indexes
+export function allTestMethods(snapshots: Snapshot[], indexes: SourceIndex[]): IndexedMethod[] {
+  const tests = indexes
     .flatMap((index) => index.methods)
     .filter((method) => {
       const ref = method.evidence,
         snapshot = snapshots.find((s) => s.repoId === ref.repoId);
       return (
         snapshot &&
-        (ref.side === 'head' || !snapshot.headFiles.includes(ref.path)) &&
+        (ref.side === 'head' || !onHead(snapshot, ref.path)) &&
         isTestPath(ref.path) &&
         method.annotations.some((annotation) =>
           /@(?:[\w.]+\.)?(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b/.test(
@@ -31,6 +31,7 @@ export function reviewTestMethods(snapshots: Snapshot[], indexes: SourceIndex[])
         )
       );
     });
+  return tests;
 }
 
 export function missingTestMethods(
@@ -41,4 +42,8 @@ export function missingTestMethods(
   return reviewTestMethods(snapshots, indexes).filter(
     (method) => !tests.some((test) => testMatchesMethod(test, method)),
   );
+}
+
+export function reviewTestMethods(snapshots: Snapshot[], indexes: SourceIndex[]): IndexedMethod[] {
+  return relevantTestMethods(snapshots, indexes, allTestMethods(snapshots, indexes));
 }

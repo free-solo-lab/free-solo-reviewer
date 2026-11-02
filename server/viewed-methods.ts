@@ -3,19 +3,15 @@ import type { Side, Snapshot } from '../shared/model.js';
 import type { MethodView } from '../shared/viewed-methods.js';
 import { fileViewScope, reviewFilePath } from '../shared/viewed-files.js';
 import { readSource } from './repository.js';
-import { indexSnapshot, INDEX_VERSION } from './indexer.js';
+import { storedIndex } from './indexer.js';
 import { Store } from './store.js';
 import { AppError } from './process.js';
+import { t } from '../shared/i18n.js';
 
 export class ViewedMethods {
   constructor(private store: Store) {}
   private async versions(sessionId: string, snapshot: Snapshot, path: string, side: Side) {
-    const indexKey = `${INDEX_VERSION}:${snapshot.repoId}:${side}:${side === 'head' ? snapshot.headSha : snapshot.mergeBase}`;
-    let index = this.store.index(indexKey);
-    if (!index) {
-      index = await indexSnapshot(snapshot, side);
-      this.store.saveIndex(indexKey, index);
-    }
+    const { index } = await storedIndex(this.store, snapshot, side);
     const lines = (await readSource(snapshot, { path, side })).split('\n');
     const scope = fileViewScope(snapshot, sessionId);
     const occurrences = new Map<string, number>();
@@ -59,7 +55,7 @@ export class ViewedMethods {
     const entry = (await this.versions(sessionId, snapshot, path, side)).find(
       (entry) => entry.method.evidence.startLine === line,
     );
-    if (!entry) throw new AppError('Метод не найден.', 404);
+    if (!entry) throw new AppError(t('Method not found.'), 404);
     if (viewed)
       this.store.saveViewedMethod({
         id: entry.key,

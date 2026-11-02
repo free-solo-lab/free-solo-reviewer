@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactionContent } from '../shared/reactions';
 import type { ReviewDiscussion } from '../shared/model';
 import { api } from './api';
+import { errorMessage } from '../shared/errors';
 export function useReviewDiscussion(
   sessionId: string | undefined,
   refreshId: string | undefined,
   initial: ReviewDiscussion[],
+  discussionRevision?: string,
 ) {
+  const seeded = useRef({ sessionId, discussionRevision });
   const active = useRef(sessionId);
   active.current = sessionId;
   const [state, setState] = useState<{ id?: string; comments: ReviewDiscussion[] }>({
@@ -28,20 +31,24 @@ export function useReviewDiscussion(
         setError(result.warnings.join(' '));
       }
     } catch (error) {
-      if (active.current === sessionId)
-        setError(error instanceof Error ? error.message : String(error));
+      if (active.current === sessionId) setError(errorMessage(error));
     } finally {
       if (active.current === sessionId && serial.current === request) setLoading(false);
     }
   }, [sessionId]);
   useEffect(() => {
+    const received =
+      seeded.current.sessionId === sessionId &&
+      !!discussionRevision &&
+      seeded.current.discussionRevision !== discussionRevision;
+    seeded.current = { sessionId, discussionRevision };
     setState({ id: sessionId, comments: initial });
     setError('');
-    void reload();
+    if (!received) void reload();
     return () => {
       serial.current++;
     };
-  }, [sessionId, refreshId, reload]);
+  }, [sessionId, refreshId, reload, discussionRevision]);
   const reply = async (repoId: string, rootId: string, body: string) => {
     if (!sessionId) return;
     const result = await api<ReviewDiscussion>(

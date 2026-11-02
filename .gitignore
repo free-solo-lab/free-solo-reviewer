@@ -9,3 +9,17 @@ test-results/
 .idea/
 .env.*
 .DS_Store
+
+.desktop/
+release/
+coverage/
+*.tsbuildinfo
+
+# Credentials and local data that must never be committed.
+auth.json
+*.pem
+*.key
+*.p12
+*.keystore
+*.sqlite
+*.sqlite-*

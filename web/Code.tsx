@@ -1,6 +1,7 @@
 import type { MethodLink } from '../shared/code-navigation';
 import React, { useMemo } from 'react';
 import { highlightLines, languageForPath, languageLabels, type CodeLine } from './syntax';
+import { t } from '../shared/i18n';
 
 export function CodeTokens({
   tokens,
@@ -32,8 +33,8 @@ export function CodeTokens({
               className="method-reference"
               role="link"
               tabIndex={0}
-              aria-label={`Перейти к определению ${link.name}`}
-              title={`⌘-клик / Ctrl-клик: открыть ${link.name}. Enter — перейти.`}
+              aria-label={t('Go to definition of {0}', link.name)}
+              title={t('⌘-click / Ctrl-click: open {0}. Enter: go to it.', link.name)}
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey) {
                   e.preventDefault();

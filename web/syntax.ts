@@ -26,6 +26,8 @@ import cpp from 'highlight.js/lib/languages/cpp';
 import swift from 'highlight.js/lib/languages/swift';
 import ruby from 'highlight.js/lib/languages/ruby';
 import php from 'highlight.js/lib/languages/php';
+import { patchLines } from '../shared/patch';
+import { t } from '../shared/i18n';
 
 const highlighter = createLowlight({
   java,
@@ -57,7 +59,7 @@ const highlighter = createLowlight({
   php,
 });
 export const languageLabels: Record<string, string> = {
-  plaintext: 'Текст',
+  plaintext: t('Text'),
   java: 'Java',
   kotlin: 'Kotlin',
   sql: 'SQL',
@@ -189,9 +191,6 @@ export interface DiffRow {
 /** Highlight each side of each hunk separately so +/- never changes grammar state. */
 export function highlightDiff(patch: string, path: string, oldPath?: string): DiffRow[] {
   const rows: DiffRow[] = [];
-  let left = 0,
-    right = 0,
-    inHunk = false;
   let group: DiffRow[] = [];
   const flush = () => {
     if (!group.length) return;
@@ -217,26 +216,17 @@ export function highlightDiff(patch: string, path: string, oldPath?: string): Di
     }
     group = [];
   };
-  for (const text of patch.split('\n')) {
-    const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
-    if (m) {
-      flush();
-      left = Number(m[1]);
-      right = Number(m[2]);
-      inHunk = true;
-      rows.push({ kind: 'hunk', text, left: null, right: null, tokens: [] });
+  for (const line of patchLines(patch)) {
+    if (line.kind === 'hunk' || line.kind === 'meta') {
+      if (line.kind === 'hunk') flush();
+      rows.push({ kind: line.kind, text: line.raw, left: null, right: null, tokens: [] });
       continue;
     }
-    if (!inHunk || ![' ', '+', '-'].includes(text[0] ?? '')) {
-      rows.push({ kind: 'meta', text, left: null, right: null, tokens: [] });
-      continue;
-    }
-    const kind = text[0] === '+' ? 'addition' : text[0] === '-' ? 'deletion' : 'context';
     const row: DiffRow = {
-      kind,
-      text,
-      left: kind === 'addition' ? null : left++,
-      right: kind === 'deletion' ? null : right++,
+      kind: line.kind,
+      text: line.raw,
+      left: line.kind === 'addition' ? null : line.oldLine,
+      right: line.kind === 'deletion' ? null : line.newLine,
       tokens: [],
     };
     rows.push(row);

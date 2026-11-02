@@ -4,6 +4,7 @@ import { fileViewScope, reviewFilePath, type FileViewStatus } from '../shared/vi
 import { readSource } from './repository.js';
 import { Store } from './store.js';
 import { AppError } from './process.js';
+import { t } from '../shared/i18n.js';
 
 export class ViewedFiles {
   constructor(private store: Store) {}
@@ -11,7 +12,8 @@ export class ViewedFiles {
     const canonical = reviewFilePath(snapshot, path);
     const present = snapshot.headFiles.includes(canonical);
     const changed = snapshot.files.find((file) => file.path === canonical);
-    if (!present && !changed) throw new AppError('Файл отсутствует в дереве снимка.', 404);
+    if (!present && !changed)
+      throw new AppError(t('The file is missing in the snapshot tree.'), 404);
     const text = await readSource(snapshot, {
       side: present ? 'head' : 'base',
       path: present ? canonical : (changed?.oldPath ?? canonical),

@@ -108,3 +108,98 @@ describe('additive analysis updates', () => {
     ).toBe(true);
   });
 });
+
+it('retains exact descriptions across neighbor edits and line shifts, identifies overloaded methods independently of model titles', async () => {
+  const { revision, snapshots } = await setup();
+  const before = revision.snapshots[0],
+    after = snapshots[0];
+  const source =
+    'class Changed {\n fun handle(value: String): String {\n  return value\n }\n fun handle(value: Int): Int {\n  return value\n }\n}\n';
+  await writeFile(join(before.headDir, 'Changed.kt'), source);
+  await writeFile(
+    join(after.headDir, 'Changed.kt'),
+    '\n\n' + source.replace('return value\n }\n}', 'return value + 1\n }\n}'),
+  );
+  const { indexSnapshot } = await import('../server/indexer');
+  const oldIndex = await indexSnapshot(before, 'head'),
+    newIndex = await indexSnapshot(after, 'head');
+  const oldMethods = oldIndex.methods.filter((m) => m.name === 'handle'),
+    newMethods = newIndex.methods.filter((m) => m.name === 'handle');
+  expect(oldMethods).toHaveLength(2);
+  const scenario = (
+    id: string,
+    title: string,
+    evidence: (typeof oldMethods)[number]['evidence'],
+  ) => ({
+    id,
+    title,
+    summary: `Exact meaning ${id}`,
+    evidence: [evidence],
+    confidence: 'inferred' as const,
+    services: [],
+    steps: [],
+  });
+  revision.run.result.indexes = [oldIndex];
+  revision.run.result.scenarios = [
+    scenario('stable', 'Original wording', oldMethods[0].evidence),
+    scenario('changed', 'Other overload', oldMethods[1].evidence),
+  ];
+  const { affectedPrevious } = await import('../server/incremental');
+  const context = await affectedPrevious(revision, snapshots);
+  expect(context.scenarios.map((s) => s.id)).toEqual(['changed']);
+  expect(context).not.toHaveProperty('indexes');
+  expect(context).not.toHaveProperty('contracts');
+  const delta = {
+    ...emptyModelResult(),
+    scenarios: [
+      scenario('new-model-id', 'Unwanted rewrite', newMethods[0].evidence),
+      scenario('new-other-id', 'Real change', newMethods[1].evidence),
+    ],
+  };
+  const result = await mergeIncremental(revision, snapshots, delta, [newIndex]);
+  expect(result.scenarios.map((s) => s.id)).toEqual(['stable', 'changed']);
+  expect(result.scenarios[0]).toEqual({
+    ...revision.run.result.scenarios[0],
+    evidence: [newMethods[0].evidence],
+  });
+  expect(result.scenarios[1].title).toBe('Real change');
+});
+
+it('invalidates a dependent description when a parameter model changes without changing the method', async () => {
+  const { revision, snapshots } = await setup(),
+    before = revision.snapshots[0],
+    after = snapshots[0];
+  const method =
+    'class Changed {\n fun handle(value: Payload): String {\n  return value.name\n }\n}\n';
+  const model = 'data class Payload(val name: String)\n';
+  for (const snap of [before, after]) {
+    snap.headFiles.push('Payload.kt');
+    await writeFile(join(snap.headDir, 'Changed.kt'), method);
+    await writeFile(join(snap.headDir, 'Payload.kt'), model);
+  }
+  const { indexSnapshot } = await import('../server/indexer');
+  const index = await indexSnapshot(before, 'head');
+  revision.run.result.indexes = [index];
+  const ref = index.methods.find((m) => m.name === 'handle')!.evidence;
+  revision.run.result.scenarios = [
+    {
+      id: 'dependent',
+      title: 'Dependent model',
+      summary: 'Old payload',
+      confidence: 'inferred',
+      evidence: [ref],
+      steps: [],
+      services: [],
+    },
+  ];
+  await writeFile(
+    join(after.headDir, 'Payload.kt'),
+    'data class Payload(val name: String, val identity: String)\n',
+  );
+  const { affectedPrevious } = await import('../server/incremental');
+  expect((await affectedPrevious(revision, snapshots)).scenarios.map((s) => s.id)).toEqual([
+    'dependent',
+  ]);
+  const result = await mergeIncremental(revision, snapshots, emptyModelResult());
+  expect(result.pendingDescriptions).toMatchObject([{ id: 'dependent', revisionId: 'prior' }]);
+});

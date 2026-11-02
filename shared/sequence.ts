@@ -1,4 +1,5 @@
 import type { AnalysisResult, Evidence, IndexedMethod, Scenario } from './model.js';
+import { t } from './i18n.js';
 
 const prefix = 'database:';
 export const databaseParticipant = (repoId: string) => `${prefix}${repoId}`;
@@ -151,7 +152,7 @@ export function withDatabaseInteractions(
     ) {
       offer({
         key,
-        label: `${verbs.join(' / ') || 'Запрос'} · ${stem(method.evidence.path)}.${method.name}`,
+        label: `${verbs.join(' / ') || t('Request')} · ${stem(method.evidence.path)}.${method.name}`,
         evidence: [method.evidence, ...trail],
         anchor,
         depth,
@@ -229,7 +230,7 @@ export function withDatabaseInteractions(
         label: entry.label,
         kind: 'database',
         change: 'unknown',
-        branch: 'По статическому коду; порядок и ветвления требуют проверки',
+        branch: t('From static code; order and branches need checking'),
         confidence: 'inferred',
         evidence: entry.evidence,
       });

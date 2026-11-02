@@ -6,6 +6,7 @@ const cacheSchema = z.array(
     sessionId: z.string(),
     snapshotId: z.string(),
     headSha: z.string(),
+    round: z.string().optional(),
     body: z.string(),
     action: z.enum(['COMMENT', 'REQUEST_CHANGES', 'APPROVE']),
     comments: z.array(
@@ -14,6 +15,8 @@ const cacheSchema = z.array(
         body: z.string(),
         evidence: evidenceSchema.nullable(),
         selected: z.boolean(),
+        forCodex: z.boolean().optional(),
+        discussionId: z.string().optional(),
       }),
     ),
   }),
@@ -58,7 +61,8 @@ export function restoreDrafts(
           draft.state === 'draft' &&
           item.sessionId === sessionId &&
           item.snapshotId === draft.snapshotId &&
-          item.headSha === draft.headSha,
+          item.headSha === draft.headSha &&
+          item.round === draft.round,
       );
       if (!local) return draft;
       const restored = {

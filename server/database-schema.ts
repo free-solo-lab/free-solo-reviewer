@@ -1,4 +1,4 @@
-import type { Evidence, Snapshot } from '../shared/model.js';
+import type { BuildModule, Evidence, Snapshot } from '../shared/model.js';
 import {
   compareSchemas,
   compareMigrationPaths,
@@ -7,6 +7,8 @@ import {
   type SchemaTable,
 } from '../shared/database-schema.js';
 import { readSource } from './repository.js';
+import { projectModules } from './contract-builds.js';
+import { t } from '../shared/i18n.js';
 
 const ident =
   '(?:"(?:[^"]|"")+"|`[^`]+`|[a-zA-Z_][\\w$]*)(?:\\s*\\.\\s*(?:"(?:[^"]|"")+"|`[^`]+`|[a-zA-Z_][\\w$]*))?';
@@ -252,7 +254,7 @@ export function extractDdl(
         if (tables.has(name)) {
           effects.push({ table: name, kind: 'structure', evidence });
           if (!/IF\s+NOT\s+EXISTS/i.test(sql))
-            warnings.push(`${file.path}: повторный CREATE TABLE ${name}.`);
+            warnings.push(t('{0}: repeated CREATE TABLE {1}.', file.path, name));
           continue;
         }
         const table: SchemaTable = {
@@ -265,7 +267,9 @@ export function extractDdl(
         };
         for (const item of chunks(create[2], ','))
           if (!addDefinition(table, item.text))
-            warnings.push(`${name}: не разобрано определение ${item.text.trim().slice(0, 70)}.`);
+            warnings.push(
+              t('{0}: definition {1} was not parsed.', name, item.text.trim().slice(0, 70)),
+            );
         // Table-level keys can precede column definitions.
         for (const item of chunks(create[2], ',')) {
           const key = item.text.match(/(?:^|\s)PRIMARY\s+KEY\s*\(([^)]+)\)/i);
@@ -298,7 +302,9 @@ export function extractDdl(
           record(table);
         } else {
           effects.push({ table: nameOf(index[3]), kind: 'structure', evidence });
-          warnings.push(`${file.path}: таблица индекса ${index[2]} отсутствует в доступном DDL.`);
+          warnings.push(
+            t('{0}: the table of index {1} is missing in the available DDL.', file.path, index[2]),
+          );
         }
         continue;
       }
@@ -327,7 +333,9 @@ export function extractDdl(
         const table = tables.get(nameOf(alter[1]));
         if (!table) {
           effects.push({ table: nameOf(alter[1]), kind: 'structure', evidence });
-          warnings.push(`${file.path}: ALTER TABLE ${alter[1]} без исходного CREATE TABLE.`);
+          warnings.push(
+            t('{0}: ALTER TABLE {1} without the original CREATE TABLE.', file.path, alter[1]),
+          );
           continue;
         }
         record(table);
@@ -385,7 +393,7 @@ export function extractDdl(
             }
           }
           warnings.push(
-            `${table.name}: DDL «${action.slice(0, 90)}» не разобран; проверьте исходник.`,
+            t('{0}: DDL “{1}” was not parsed; check the source.', table.name, action.slice(0, 90)),
           );
         }
         continue;
@@ -410,7 +418,7 @@ export function extractDdl(
       }
       if (/^(?:CREATE|ALTER|DROP)\s+(?:TABLE|INDEX)\b/i.test(sql) || /^(?:DO|EXECUTE)\b/i.test(sql))
         warnings.push(
-          `${file.path}: неподдержанный DDL/динамический SQL, схема может быть неполной.`,
+          t('{0}: unsupported DDL or dynamic SQL; the schema may be incomplete.', file.path),
         );
     }
   }
@@ -427,13 +435,16 @@ export function extractDdl(
     }
   return { tables: [...tables.values()], warnings: [...new Set(warnings)], touched, effects };
 }
-export async function databaseSchema(snapshot: Snapshot): Promise<DatabaseSchema> {
+const schemaPaths = (paths: string[]) =>
+  paths.filter(
+    (path) =>
+      /\.sql$/i.test(path) &&
+      !/(?:^|\/)(?:test|tests|rollback|undo)(?:\/|$)|(?:^|\/)U\d/i.test(path),
+  );
+
+async function serviceSchema(snapshot: Snapshot): Promise<DatabaseSchema> {
   const build = async (side: 'base' | 'head') => {
-    const paths = (side === 'head' ? snapshot.headFiles : snapshot.baseFiles).filter(
-      (path) =>
-        /\.sql$/i.test(path) &&
-        !/(?:^|\/)(?:test|tests|rollback|undo)(?:\/|$)|(?:^|\/)U\d/i.test(path),
-    );
+    const paths = schemaPaths(side === 'head' ? snapshot.headFiles : snapshot.baseFiles);
     const migrations = paths.filter(
       (path) =>
         /migration|changelog|schema/i.test(path) ||
@@ -494,7 +505,73 @@ export async function databaseSchema(snapshot: Snapshot): Promise<DatabaseSchema
         .filter((item) => item.name === table.name)
         .map((item) => item.evidence),
     })),
-    warnings: [...before.warnings.map((warning) => `До PR: ${warning}`), ...after.warnings],
+    warnings: [
+      ...before.warnings.map((warning) => t('Before the PR: {0}', warning)),
+      ...after.warnings,
+    ],
     migrations,
+  };
+}
+
+function serviceOwner(path: string, modules: BuildModule[], repoName: string) {
+  const module = modules
+    .filter((m) => !m.dir || path.startsWith(m.dir + '/'))
+    .sort((a, b) => b.dir.length - a.dir.length)[0];
+  // Infrastructure SQL and applications without their own build file still have an explicit
+  // source directory. A root aggregator must not swallow these service boundaries.
+  const resource = path.match(/^(.*?)\/src\/(?:main|test)\/resources\//)?.[1];
+  const collection = path.match(
+    /^(.*?(?:^|\/)(?:apps|services|infra|modules)\/[^/]+)(?:\/|$)/,
+  )?.[1];
+  const inferred = resource ?? collection;
+  const dir = module?.dir || inferred || '';
+  const name =
+    module?.dir && module.tool !== 'gradle' && !module.name.includes('${')
+      ? module.name
+      : dir
+        ? dir.split('/').at(-1)!
+        : repoName;
+  return { dir, name };
+}
+
+/** Parse independent module trees separately: equal table names in two services never merge. */
+export async function databaseSchema(snapshot: Snapshot): Promise<DatabaseSchema> {
+  const paths = [...new Set(schemaPaths([...snapshot.baseFiles, ...snapshot.headFiles]))];
+  if (!paths.length) return serviceSchema(snapshot);
+  const modules = await projectModules(snapshot);
+  const groups = new Map<string, { dir: string; name: string; paths: Set<string> }>();
+  for (const path of paths) {
+    const owner = serviceOwner(path, modules, snapshot.repoName);
+    const group = groups.get(owner.dir) ?? { ...owner, paths: new Set<string>() };
+    group.paths.add(path);
+    groups.set(owner.dir, group);
+  }
+  const services = await Promise.all(
+    [...groups.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(async (group) => ({
+        ...(await serviceSchema({
+          ...snapshot,
+          headFiles: snapshot.headFiles.filter((p) => group.paths.has(p)),
+          baseFiles: snapshot.baseFiles.filter((p) => group.paths.has(p)),
+        })),
+        serviceId: group.dir
+          ? `${snapshot.repoId}:${encodeURIComponent(group.dir)}`
+          : snapshot.repoId,
+        serviceName: !group.dir && groups.size > 1 ? t('Shared SQL scripts') : group.name,
+        serviceDir: group.dir,
+      })),
+  );
+  if (services.length === 1) return services[0];
+  return {
+    snapshotId: snapshot.id,
+    repoId: snapshot.repoId,
+    repoName: snapshot.repoName,
+    headSha: snapshot.headSha,
+    baseSha: snapshot.mergeBase,
+    tables: [],
+    warnings: [],
+    migrations: services.flatMap((s) => s.migrations ?? []),
+    services,
   };
 }

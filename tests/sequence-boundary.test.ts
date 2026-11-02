@@ -132,6 +132,92 @@ describe('external request and response boundaries', () => {
     s.services.push('remote');
     expect(withExternalBoundary(s, [index])).toBe(s);
   });
+  it('never turns helper results returned to the handler into two external responses', () => {
+    const s = scenario();
+    s.steps = [
+      {
+        ...s.steps[0],
+        label: 'RegistryHandler.register -> RegistryService.register',
+        evidence: [controller, service],
+      },
+      {
+        ...s.steps[1],
+        id: 'service-result',
+        label: 'RegistryService.register -> RegistryHandler.register: Response',
+        evidence: [service, controller],
+      },
+      {
+        ...s.steps[0],
+        id: 'second-call',
+        label: 'RegistryHandler.register -> RegistrationService.register',
+        evidence: [controller, registration],
+      },
+      {
+        ...s.steps[1],
+        id: 'second-result',
+        label: 'RegistrationService.register -> RegistryHandler.register: Response',
+        evidence: [registration, controller],
+      },
+    ];
+    const original = JSON.stringify(s);
+    const bounded = withExternalBoundary(s, [index]);
+    const actor = bounded.steps[0].from;
+    expect(
+      bounded.steps.filter((step) => step.kind === 'return').every((step) => step.to !== actor),
+    ).toBe(true);
+    const expanded = sequenceView(s, [index]);
+    const name = (id: string) => expanded.participants.find((p) => p.id === id)?.label;
+    expect(
+      expanded.scenario.steps
+        .filter((step) => step.kind === 'return')
+        .map((step) => [name(step.from), name(step.to)]),
+    ).toEqual([
+      ['RegistryService', 'RegistryHandler'],
+      ['RegistrationService', 'RegistryHandler'],
+    ]);
+    const collapsed = sequenceView(s, [index], new Set(['r']));
+    expect(collapsed.scenario.steps.map((step) => step.kind)).toEqual(['call']);
+    expect(JSON.stringify(s)).toBe(original);
+    s.steps.push({
+      ...s.steps[1],
+      id: 'outer-result',
+      label: 'RegistryHandler.register -> Client',
+      evidence: [controller],
+    });
+    const complete = sequenceView(s, [index], new Set(['r']));
+    expect(complete.scenario.steps.map((step) => step.kind)).toEqual(['call', 'return']);
+    expect(complete.scenario.steps[1].to).toBe(complete.scenario.steps[0].from);
+  });
+  it('keeps ambiguously labelled mixed helper evidence internal rather than guessing an external response', () => {
+    const s = scenario();
+    s.steps = [
+      { ...s.steps[0], label: 'register', evidence: [controller] },
+      { ...s.steps[1], label: 'Возврат результата', evidence: [service, controller] },
+    ];
+    const bounded = withExternalBoundary(s, [index]);
+    expect(bounded.steps[1].to).toBe('r');
+  });
+  it('uses the returning helper type rather than the handler response type', () => {
+    const distinct = {
+      ...index,
+      methods: index.methods.map((m) => ({
+        ...m,
+        signature:
+          m.evidence.path === service.path
+            ? 'fun register(request: Request): PaymentModel'
+            : 'fun register(request: Request): BlockedShops',
+      })),
+    };
+    const response = {
+      ...scenario().steps[1],
+      label: 'RegistryService.register -> RegistryHandler.register',
+      evidence: [service, controller],
+    };
+    const data = sequenceMethod(response, [distinct], []);
+    expect(data.label).toBe('register()');
+    expect(data.inputs).toEqual([]);
+    expect(data.outputs).toEqual([{ name: 'PaymentModel' }]);
+  });
   it('uses the response model, without request parameters, on return arrows', () => {
     const s = withExternalBoundary(scenario(), [index]);
     const response = sequenceMethod(s.steps.at(-1)!, [index], []);

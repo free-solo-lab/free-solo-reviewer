@@ -47,6 +47,15 @@ const added = {
 };
 
 describe('durable local review comments', () => {
+  it('never restores a previous publication round into the next review on the same commit', () => {
+    const storage = memoryStorage();
+    cacheDrafts('session', [{ ...added, round: 'old' }], storage);
+    const next = { ...draft, round: 'new' };
+    expect(restoreDrafts('session', [next], storage)).toEqual({ drafts: [next], recovered: false });
+    const updated = { ...next, comments: [{ ...added.comments[0], forCodex: true }] };
+    cacheDrafts('session', [updated], storage);
+    expect(restoreDrafts('session', [next], storage).drafts).toEqual([updated]);
+  });
   it('recovers an added comment on reload before the server save finishes', () => {
     const storage = memoryStorage();
     cacheDrafts('session', [added], storage);

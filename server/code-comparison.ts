@@ -1,9 +1,13 @@
+import { reviewContext } from '../shared/review-timeline.js';
+import { lineage, sourceIdentity } from '../shared/review-workflow.js';
+import { snapshotDiff } from './snapshot-diff.js';
 import type { ReviewSession } from '../shared/model.js';
 import type { CodeComparison } from '../shared/code-comparison.js';
 import { reviewFilePath } from '../shared/viewed-files.js';
 import { changedFiles, readSource } from './repository.js';
 import { Store } from './store.js';
 import { AppError } from './process.js';
+import { t } from '../shared/i18n.js';
 
 export async function codeComparison(
   store: Store,
@@ -12,11 +16,11 @@ export async function codeComparison(
   repoId: string,
   requestedPath: string,
 ): Promise<CodeComparison> {
-  const revision = session.history?.find((revision) => revision.id === revisionId);
+  const revision = reviewContext(session, revisionId);
   const previous = revision?.snapshots.find((snapshot) => snapshot.repoId === repoId);
   const current = session.snapshots.find((snapshot) => snapshot.repoId === repoId);
-  if (!revision || !previous || !current || previous.pr?.number !== current.pr?.number)
-    throw new AppError('Ревью для сравнения не найдено.', 404);
+  if (!revision || !previous || !current || lineage(previous) !== lineage(current))
+    throw new AppError(t('The review to compare with was not found.'), 404);
   let path = requestedPath;
   if (!current.headFiles.includes(path) && !previous.headFiles.includes(path))
     path = reviewFilePath(current, path);
@@ -28,16 +32,21 @@ export async function codeComparison(
   );
   const repo = store.repository(repoId);
   if (!saved && previous.headSha !== current.headSha && !repo)
-    throw new AppError('Репозиторий не найден.', 404);
+    throw new AppError(t('Repository not found.'), 404);
   const changes =
-    previous.headSha === current.headSha
+    sourceIdentity(previous) === sourceIdentity(current)
       ? []
-      : (saved?.files ?? (await changedFiles(repo!, previous.headSha, current.headSha)));
+      : (saved?.files ??
+        (await changedFiles(
+          current.local ? { ...repo!, path: current.local.gitDir } : repo!,
+          previous.headSha,
+          current.headSha,
+        ).catch(() => snapshotDiff(previous, current))));
   const file = changes.find((file) => file.path === path || file.oldPath === path);
   const currentPath = file?.path ?? path,
     previousPath = file?.oldPath ?? file?.path ?? path;
   if (!current.headFiles.includes(currentPath) && !previous.headFiles.includes(previousPath))
-    throw new AppError('Файл отсутствует в сравниваемых версиях.', 404);
+    throw new AppError(t('The file is missing in the compared versions.'), 404);
   return {
     previousRevisionId: revision.id,
     previousSnapshotId: previous.id,

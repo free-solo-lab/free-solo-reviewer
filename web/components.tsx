@@ -1,3 +1,4 @@
+import { stepDescription } from '../shared/step-description';
 import React, { lazy, Suspense, useState, useRef, useEffect, useMemo } from 'react';
 import type {
   Repository,
@@ -27,20 +28,40 @@ import { sourceDiffRows, reviewDiffRows } from '../shared/source-diff';
 import type { MethodLink } from '../shared/code-navigation';
 import { sequenceParticipantLayout, type SequenceParticipant } from '../shared/sequence-view';
 import { sequenceMethod } from '../shared/sequence-method';
+import {
+  sequenceActivations,
+  sequenceEntry,
+  sequenceReturns,
+  type SequenceActivation,
+} from '../shared/sequence-activations';
 import type { SqlPreview } from '../shared/sql-preview';
 import { sequenceLayout, type TransactionRegion } from '../shared/transactions';
 import { api } from './api';
-import { CodeTokens, CodeLanguage, CodeBlock } from './Code';
+import { GitHubAccountPicker } from './GitHubAccountPicker';
+import { LocalBasePicker } from './LocalBasePicker';
+import { chooseRepositoryDirectory } from './platform';
+import { CodeTokens, CodeBlock } from './Code';
 import { SequenceCanvas } from './SequenceCanvas';
 import { highlightLines, highlightDiff, languageForPath } from './syntax';
+import { useEditableCode, type InlineEditing } from './workspace/useEditableCode';
+import { visibleText } from './workspace/editable-code';
+import { codeLineChunks } from '../shared/code-edits';
+import { sourceChangeBlocks, nextSourceChange } from '../shared/source-changes';
+import { scopedSourceRows } from '../shared/scenario-code';
+import { errorMessage } from '../shared/errors';
+import { Icon, IconButton } from './icons';
+import { Dialog, DialogClose, DialogTitle } from './ui/Dialog';
+import { t } from '../shared/i18n';
+// Swagger and its 180 KB stylesheet load only when a contract is opened.
 const Swagger = lazy(() =>
-  import('swagger-ui-react').then((m) => ({
-    default: m.default as React.ComponentType<
-      React.ComponentProps<typeof m.default> & { validatorUrl: null }
-    >,
-  })),
+  Promise.all([import('swagger-ui-react'), import('swagger-ui-react/swagger-ui.css')]).then(
+    ([m]) => ({
+      default: m.default as React.ComponentType<
+        React.ComponentProps<typeof m.default> & { validatorUrl: null }
+      >,
+    }),
+  ),
 );
-import 'swagger-ui-react/swagger-ui.css';
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="empty">
@@ -55,7 +76,7 @@ export function Gaps({ gaps }: { gaps: string[] }) {
   return gaps.length > 0 ? (
     <details className="gaps panel">
       <summary>
-        △ Неизвестное и ограничения <span>{gaps.length}</span>
+        {t('△ Unknowns and limitations')} <span>{gaps.length}</span>
       </summary>
       <ul>
         {gaps.map((g, i) => (
@@ -65,19 +86,27 @@ export function Gaps({ gaps }: { gaps: string[] }) {
     </details>
   ) : null;
 }
-export function commentLocation(snapshot: Snapshot, e: Evidence | null) {
-  if (!e) return 'В общем описании ревью';
+/** Whether GitHub can attach the comment to a changed line; otherwise it goes to the review body. */
+export function isInlineComment(snapshot: Snapshot, e: Evidence) {
   const f = snapshot.files.find(
     (f) => (e.side === 'head' ? f.path : (f.oldPath ?? f.path)) === e.path,
   );
-  const inline =
+  return (
     e.repoId === snapshot.repoId &&
-    f &&
-    (e.side === 'head' ? f.addedLines : f.removedLines).includes(e.startLine);
-  return inline
-    ? `Inline · ${e.path}:${e.startLine} · ${e.side === 'head' ? 'RIGHT' : 'LEFT'}`
-    : `В общем описании · ${e.path}:${e.startLine} (${e.side})`;
+    !!f &&
+    (e.side === 'head' ? f.addedLines : f.removedLines).includes(e.startLine)
+  );
 }
+export function commentLocation(snapshot: Snapshot, e: Evidence | null) {
+  if (!e) return t('In the review summary');
+  return isInlineComment(snapshot, e)
+    ? `Inline · ${e.path}:${e.startLine} · ${e.side === 'head' ? 'RIGHT' : 'LEFT'}`
+    : t('In the review summary · {0}:{1} ({2})', e.path, e.startLine, e.side);
+}
+/** Width of the activation bar on a lifeline. */
+const BAR = 10;
+/** Distance from a step's arrow to the answer that closes its bar, below the result models. */
+const ANSWER = 52;
 export function Sequence({
   scenario,
   name,
@@ -112,11 +141,32 @@ export function Sequence({
   const services = participants?.map((p) => p.id) ?? serviceGroups(scenario).flat();
   const participantLayout = participants ? sequenceParticipantLayout(participants) : null;
   const width = participantLayout?.width ?? Math.max(720, services.length * 240);
-  const layout = sequenceLayout(
-    scenario,
-    transactions,
-    participantLayout?.hasClasses ? 220 : participants ? 166 : 126,
-  );
+  const first = scenario.steps[0];
+  // The entry call gets a row of its own above the first step.
+  const top = participantLayout?.hasClasses ? 220 : participants ? 166 : 126;
+  const entryY = top - 20;
+  const activations = sequenceActivations(scenario.steps);
+  const answers = sequenceReturns(activations);
+  const gaps: number[] = scenario.steps.map((s) => (stepDescription(s) ? 20 : 0));
+  for (const answer of answers)
+    gaps[answer.end] = Math.max(gaps[answer.end] ?? 0, answer.rank * 18);
+  const layout = sequenceLayout(scenario, transactions, top + (first ? 56 : 0), gaps);
+  // Answers come below the result models of their last step, the inner one first.
+  const answerY = (end: number, rank: number) =>
+    layout.rows[end] + ANSWER + (stepDescription(scenario.steps[end]) ? 20 : 0) + rank * 18;
+  const barBottom = (bar: SequenceActivation) => {
+    const answer = answers.find(
+      (item) => item.lane === bar.lane && item.start === bar.start && item.depth === bar.depth,
+    );
+    return answer ? answerY(answer.end, answer.rank) : layout.rows[bar.end] + ANSWER - 12;
+  };
+  const entry = first
+    ? sequenceEntry(
+        scenario.steps,
+        indexes,
+        participants?.find((p) => p.id === first.from && p.kind === 'class')?.evidence,
+      )
+    : null;
   const height = layout.height;
   const x = (id: string) =>
     participantLayout?.positions.get(id)?.x ?? 110 + services.indexOf(id) * 240;
@@ -161,9 +211,9 @@ export function Sequence({
               tabIndex={activate ? 0 : undefined}
               aria-label={
                 isToggle
-                  ? `${isCollapsed ? 'Развернуть' : 'Свернуть'} сервис ${name(id)}`
+                  ? t('{0} service {1}', isCollapsed ? t('Expand') : t('Collapse'), name(id))
                   : classSource
-                    ? `Открыть весь код класса ${name(id)}`
+                    ? t('Open the whole code of class {0}', name(id))
                     : undefined
               }
               aria-expanded={isToggle ? !isCollapsed : undefined}
@@ -198,9 +248,9 @@ export function Sequence({
               )}
               <title>
                 {isToggle
-                  ? `${name(id)} · нажмите для изменения детализации`
+                  ? t('{0} · click to change the level of detail', name(id))
                   : classSource
-                    ? `${name(id)} · открыть весь код класса`
+                    ? t('{0} · open the whole class code', name(id))
                     : name(id)}
               </title>
               <text x={x(id)} y={40} textAnchor="middle" className="participant-name">
@@ -256,6 +306,17 @@ export function Sequence({
             >
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
             </marker>
+            <marker
+              id="answer"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            </marker>
           </defs>
           {layout.frames.map((frame) => {
             const frameMembers = frame.boundaryParticipants;
@@ -266,7 +327,7 @@ export function Sequence({
             const frameWidth = Math.max(90, right - left);
             const label =
               frame.mode === 'non-transactional'
-                ? 'БЕЗ TX'
+                ? t('NO TX')
                 : frame.mode === 'uncertain'
                   ? 'TX ?'
                   : 'TX';
@@ -283,7 +344,7 @@ export function Sequence({
                 <g
                   role="button"
                   tabIndex={0}
-                  aria-label={`Граница транзакции: ${frame.title} · ${frame.propagation}`}
+                  aria-label={t('Transaction boundary: {0} · {1}', frame.title, frame.propagation)}
                   onClick={() => onSelect(frame.evidence)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -314,10 +375,87 @@ export function Sequence({
             );
           })}
           {participantNodes(false)}
+          {activations.map((bar) => (
+            <rect
+              key={`${bar.lane}:${bar.start}:${bar.depth}`}
+              className="sequence-activation"
+              x={x(bar.lane) - BAR / 2 + bar.depth * BAR * 0.6}
+              y={bar.start < 0 ? entryY : layout.rows[bar.start]}
+              width={BAR}
+              height={barBottom(bar) - (bar.start < 0 ? entryY : layout.rows[bar.start])}
+            />
+          ))}
+          {answers.map((answer) => {
+            const y = answerY(answer.end, answer.rank);
+            const from =
+                x(answer.lane) -
+                Math.sign(x(answer.lane) - (answer.caller ? x(answer.caller) : 18)) * (BAR / 2),
+              to = answer.caller
+                ? x(answer.caller) + Math.sign(x(answer.lane) - x(answer.caller)) * (BAR / 2)
+                : 18;
+            const call = answer.start >= 0 ? scenario.steps[answer.start] : undefined;
+            const outputs = call ? sequenceMethod(call, indexes, snapshots).outputs : [];
+            return (
+              <g key={`answer:${answer.lane}:${answer.start}`} className="sequence-return">
+                <line x1={from} x2={to} y1={y} y2={y} markerEnd="url(#answer)" />
+                {outputs.length > 0 && (
+                  <text x={(from + to) / 2} y={y - 5} textAnchor="middle">
+                    {outputs.map((model) => model.name).join(', ')}
+                  </text>
+                )}
+                <title>
+                  {answer.caller
+                    ? t('Return {0} → {1}', name(answer.lane), name(answer.caller))
+                    : t('Scenario exit')}
+                </title>
+              </g>
+            );
+          })}
+          {first && (
+            <g
+              className={`sequence-entry ${entry ? '' : 'unknown'}`}
+              role={entry ? 'button' : undefined}
+              tabIndex={entry ? 0 : undefined}
+              aria-label={entry ? t('Open entry method {0}', entry.name) : undefined}
+              onClick={entry ? () => onSelect([entry.evidence]) : undefined}
+              onKeyDown={
+                entry
+                  ? (e) => {
+                      if (e.key === 'Enter') onSelect([entry.evidence]);
+                    }
+                  : undefined
+              }
+            >
+              <circle cx={18} cy={entryY} r={4} />
+              <line
+                x1={18}
+                x2={x(first.from) - BAR / 2}
+                y1={entryY}
+                y2={entryY}
+                markerEnd="url(#arrow)"
+              />
+              <text x={24} y={entryY - 10}>
+                {entry ? `${entry.name}()` : t('Scenario start')}
+              </text>
+              <title>
+                {entry
+                  ? t('Entry method {0}.{1}() · open code', name(first.from), entry.name)
+                  : t('The method that starts the scenario was not found in the code')}
+              </title>
+            </g>
+          )}
           {scenario.steps.map((s, i) => {
             const y = layout.rows[i];
             const self = s.from === s.to;
+            // Arrows start and end at the edges of the activation bars, not at the dashed line.
+            const side = Math.sign(x(s.to) - x(s.from)) * (BAR / 2);
             const method = sequenceMethod(s, indexes, snapshots);
+            const purpose = stepDescription(s);
+            const captionOffset = purpose ? 20 : 0;
+            const captionLimit = Math.max(
+              24,
+              Math.min(88, Math.floor((Math.abs(x(s.to) - x(s.from)) || 220) / 6) - 4),
+            );
             const sql = s.kind === 'database';
             const sqlEvidence =
               method.evidence ??
@@ -329,7 +467,11 @@ export function Sequence({
                 ? onSqlSelect(sqlEvidence)
                 : onSelect(method.evidence ? [method.evidence] : s.evidence);
             const label = sql
-              ? `${s.label.match(/\b(SELECT|INSERT|UPDATE|DELETE|MERGE)\b/i)?.[1]?.toUpperCase() ?? 'SQL'} · открыть запрос`
+              ? t(
+                  '{0} · open query',
+                  s.label.match(/\b(SELECT|INSERT|UPDATE|DELETE|MERGE)\b/i)?.[1]?.toUpperCase() ??
+                    'SQL',
+                )
               : method.label;
             return (
               <g
@@ -341,7 +483,7 @@ export function Sequence({
                 }}
                 tabIndex={0}
                 role="button"
-                aria-label={sql ? `Открыть SQL: ${s.label}` : `Открыть вызов: ${s.label}`}
+                aria-label={sql ? t('Open SQL: {0}', s.label) : t('Open call: {0}', s.label)}
               >
                 <rect
                   className="step-hit"
@@ -353,9 +495,15 @@ export function Sequence({
                 {self ? (
                   <path d={`M${x(s.from)},${y} h70 v20 h-70`} markerEnd="url(#arrow)" fill="none" />
                 ) : (
-                  <line x1={x(s.from)} x2={x(s.to)} y1={y} y2={y} markerEnd="url(#arrow)" />
+                  <line
+                    x1={x(s.from) + side}
+                    x2={x(s.to) - side}
+                    y1={y}
+                    y2={y}
+                    markerEnd="url(#arrow)"
+                  />
                 )}
-                <title>{label}</title>
+                <title>{purpose ? `${label} — ${purpose}` : label}</title>
                 <text
                   x={self ? x(s.from) + 12 : (x(s.from) + x(s.to)) / 2}
                   y={y - 28}
@@ -374,16 +522,29 @@ export function Sequence({
                       </tspan>
                     ))}
                 </text>
+                {purpose && (
+                  <text
+                    className="sequence-purpose"
+                    x={self ? x(s.from) + 12 : (x(s.from) + x(s.to)) / 2}
+                    y={y + (self ? 36 : 20)}
+                    textAnchor={self ? 'start' : 'middle'}
+                  >
+                    <title>{purpose}</title>
+                    {purpose.length > captionLimit
+                      ? `${purpose.slice(0, captionLimit - 1)}…`
+                      : purpose}
+                  </text>
+                )}
                 {!sql && (method.inputs.length > 0 || method.outputs.length > 0) && (
                   <text
                     className="sequence-models"
                     x={self ? x(s.from) + 12 : (x(s.from) + x(s.to)) / 2}
-                    y={y + (self ? 38 : 22)}
+                    y={y + (self ? 38 : 22) + captionOffset}
                     textAnchor={self ? 'start' : 'middle'}
                   >
                     {[
-                      { label: 'Вход', models: method.inputs },
-                      { label: 'Выход', models: method.outputs },
+                      { label: t('Input'), models: method.inputs },
+                      { label: t('Exit'), models: method.outputs },
                     ]
                       .filter((group) => group.models.length)
                       .map((group, n) => (
@@ -417,7 +578,9 @@ export function Sequence({
                               >
                                 {model.name}
                                 {model.evidence && (
-                                  <title>Открыть модель: {model.evidence.path}</title>
+                                  <title>
+                                    {t('Open model:')} {model.evidence.path}
+                                  </title>
                                 )}
                               </tspan>
                             </React.Fragment>
@@ -445,26 +608,28 @@ function CodeComments({
 }) {
   if (!comments.length) return null;
   return (
-    <div className="code-comment-thread" role="region" aria-label="Комментарии к коду">
+    <div className="code-comment-thread" role="region" aria-label={t('Code comments')}>
       {comments.map((comment) => (
         <article className="code-comment-card" key={comment.id}>
           <div className="code-comment-heading">
-            <strong>Ваш комментарий</strong>
+            <strong>{comment.forCodex ? t('Task for Codex') : t('Your comment')}</strong>
             <span>
               {comment.evidence?.startLine === comment.evidence?.endLine
-                ? `Строка ${comment.evidence?.startLine}`
-                : `Строки ${comment.evidence?.startLine}–${comment.evidence?.endLine}`}
+                ? t('Line {0}', comment.evidence?.startLine)
+                : t('Lines {0}–{1}', comment.evidence?.startLine, comment.evidence?.endLine)}
             </span>
-            {!comment.selected && <small>Не включён в отправку</small>}
+            {comment.forCodex ? (
+              <small className="codex-comment-tag">{t('For Codex')}</small>
+            ) : (
+              !comment.selected && <small>{t('Not included in the submission')}</small>
+            )}
             {onDelete && (!deletableIds || deletableIds.has(comment.id)) && (
-              <button
+              <IconButton
+                icon="trash"
+                label={t('Delete comment')}
                 className="code-comment-delete"
-                aria-label="Удалить комментарий"
-                title="Удалить комментарий"
                 onClick={() => onDelete(comment.id)}
-              >
-                ×
-              </button>
+              />
             )}
           </div>
           <Markdown>{comment.body}</Markdown>
@@ -576,7 +741,21 @@ export function SourceCode({
   previousComments = [],
   previousDiscussions = [],
   onHistoricalSource,
+  inlineEditing,
+  toolbarActions,
+  changeNavigation = true,
+  ranges,
+  autoScroll = true,
+  deletableCommentIds,
 }: {
+  deletableCommentIds?: Set<string>;
+  ranges?: Evidence[];
+  autoScroll?: boolean;
+  toolbarActions?: React.ReactNode;
+  /** The bar of previous/next change; a scenario's code flow goes without it. */
+  changeNavigation?: boolean;
+  /** The current lines are one editor over the diff; removed lines stay read-only. */
+  inlineEditing?: InlineEditing;
   comparison?: CodeComparison;
   previousComments?: DraftComment[];
   previousDiscussions?: CodeDiscussion[];
@@ -614,6 +793,20 @@ export function SourceCode({
     setExpandedMethods(new Set());
     setCollapsedMethods(new Set());
   }, [evidence.repoId, evidence.side, evidence.path, visitId]);
+  const expandedTarget = useRef('');
+  useEffect(() => {
+    if (!autoScroll || evidence.startLine <= 1) return;
+    const target = methods.find(
+      (entry) =>
+        entry.method.evidence.startLine <= evidence.startLine &&
+        entry.method.evidence.endLine >= evidence.startLine,
+    );
+    if (!target) return;
+    const key = `${visitId}:${evidence.repoId}:${evidence.path}:${target.key}`;
+    if (expandedTarget.current === key) return;
+    expandedTarget.current = key;
+    setExpandedMethods((previous) => new Set(previous).add(target.key));
+  }, [visitId, evidence.repoId, evidence.path, evidence.startLine, methods, autoScroll]);
   const isCollapsed = (entry: MethodView) =>
     !expandedMethods.has(entry.key) && (entry.viewed || collapsedMethods.has(entry.key));
   const toggleMethod = (entry: MethodView) => {
@@ -731,14 +924,83 @@ export function SourceCode({
     () => highlightLines(text, languageForPath(evidence.path)),
     [text, evidence.path],
   );
-  const rows = useMemo(
+  const fullRows = useMemo(
     () =>
-      comparison
-        ? reviewDiffRows(text, evidence, comparison.file, comparison.previousPath)
-        : sourceDiffRows(text, evidence, changedFile),
-    [text, evidence.repoId, evidence.side, evidence.path, changedFile, comparison],
+      !text && inlineEditing
+        ? [
+            {
+              text: '',
+              kind: 'context' as const,
+              left: 1,
+              right: 1,
+              native: true,
+              evidence: { ...evidence, startLine: 1, endLine: 1 },
+            },
+          ]
+        : comparison
+          ? reviewDiffRows(text, evidence, comparison.file, comparison.previousPath)
+          : sourceDiffRows(text, evidence, changedFile),
+    [text, evidence.repoId, evidence.side, evidence.path, changedFile, comparison, !!inlineEditing],
   );
+  const rows = useMemo(() => scopedSourceRows(fullRows, ranges), [fullRows, ranges]);
+  const originalChunks = useMemo(() => codeLineChunks(text), [text]);
+  const generation = useEditableCode(ref, inlineEditing);
   const methodRows = useMemo(() => sourceMethodRows(rows, methods), [rows, methods]);
+  /** Added and removed lines of each method, shown on its header like GitHub's file stats. */
+  const methodStats = useMemo(() => {
+    const stats = new Map<string, { added: number; removed: number }>();
+    for (const { row, method } of methodRows) {
+      if (!method || row.kind === 'context') continue;
+      const entry = stats.get(method.key) ?? { added: 0, removed: 0 };
+      if (row.kind === 'addition') entry.added++;
+      else entry.removed++;
+      stats.set(method.key, entry);
+    }
+    return stats;
+  }, [methodRows]);
+  const changeBlocks = useMemo(
+    () =>
+      sourceChangeBlocks(
+        rows,
+        new Set(
+          inlineEditing?.chunks.flatMap((value, i) =>
+            value !== originalChunks[i] ? [i + 1] : [],
+          ) ?? [],
+        ),
+      ),
+    [rows, inlineEditing?.chunks, originalChunks],
+  );
+  const [changeJump, setChangeJump] = useState({ row: -1, serial: 0 });
+  useEffect(
+    () => setChangeJump({ row: -1, serial: 0 }),
+    [visitId, evidence.repoId, evidence.path, evidence.side, comparison, changedFile],
+  );
+  const activeChange = changeBlocks.findIndex(
+    (block) => changeJump.row >= block.start && changeJump.row <= block.end,
+  );
+  const jumpToChange = (direction: -1 | 1) => {
+    const index = nextSourceChange(activeChange, direction, changeBlocks.length);
+    if (index < 0) return;
+    const block = changeBlocks[index];
+    setExpandedMethods((previous) => {
+      const next = new Set(previous);
+      for (let i = block.start; i <= block.end; i++) {
+        const method = methodRows[i]?.method;
+        if (method) next.add(method.key);
+      }
+      return next;
+    });
+    setChangeJump((previous) => ({ row: block.start, serial: previous.serial + 1 }));
+  };
+  useEffect(() => {
+    if (changeJump.row < 0 || !changeJump.serial) return;
+    const frame = requestAnimationFrame(() => {
+      ref.current
+        ?.querySelector(`[data-change-row="${changeJump.row}"]`)
+        ?.scrollIntoView({ block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [changeJump]);
   const priorComments = previousComments.filter(
     (comment) => !comments.some((current) => current.id === comment.id && current.evidence),
   );
@@ -820,13 +1082,15 @@ export function SourceCode({
     );
   };
   const placedThreadIds = new Set(rows.flatMap(rowDiscussions).map((thread) => thread.root.id));
-  const unplacedThreads = [
-    ...new Map(
-      [...currentDiscussions, ...priorDiscussions]
-        .filter((thread) => !placedThreadIds.has(thread.root.id))
-        .map((thread) => [thread.root.id, thread]),
-    ).values(),
-  ];
+  const unplacedThreads = ranges
+    ? []
+    : [
+        ...new Map(
+          [...currentDiscussions, ...priorDiscussions]
+            .filter((thread) => !placedThreadIds.has(thread.root.id))
+            .map((thread) => [thread.root.id, thread]),
+        ).values(),
+      ];
   const methodsWithComments = new Set(
     methodRows
       .filter(
@@ -849,6 +1113,7 @@ export function SourceCode({
     [changedFile, evidence.path],
   );
   useEffect(() => {
+    if (!autoScroll) return;
     ref.current
       ?.querySelector(
         `[data-source-side="${evidence.side}"][data-source-line="${evidence.startLine}"]`,
@@ -858,19 +1123,68 @@ export function SourceCode({
       ref.current.scrollTop = position.top;
       ref.current.scrollLeft = position.left;
     }
-  }, [evidence.repoId, evidence.side, evidence.path, visitId]);
+  }, [evidence.repoId, evidence.side, evidence.path, visitId, autoScroll]);
   return (
     <>
-      <div className="code-toolbar">
-        <CodeLanguage path={evidence.path} />
-        {methodError && <span role="alert">{methodError}</span>}
-        <span className="source-diff-legend">
-          <b>+ Добавлено</b> <b>− Удалено</b>
-        </span>
-        <span>Потяни за номер строки — выделить диапазон · ⌘-клик — определение</span>
-      </div>
+      {changeNavigation && (
+        <div className="code-toolbar">
+          <div className="source-change-navigation" role="group" aria-label={t('Navigate changes')}>
+            <IconButton
+              icon="arrowLeft"
+              label={t('Previous change')}
+              title={t('Previous change · ⌘←')}
+              tooltip={false}
+              disabled={!changeBlocks.length}
+              onClick={() => jumpToChange(-1)}
+            />
+            <span aria-live="polite">
+              {activeChange >= 0
+                ? `${activeChange + 1}/${changeBlocks.length}`
+                : t('{0} chg.', changeBlocks.length)}
+            </span>
+            <IconButton
+              icon="arrowRight"
+              label={t('Next change')}
+              title={t('Next change · ⌘→')}
+              tooltip={false}
+              disabled={!changeBlocks.length}
+              onClick={() => jumpToChange(1)}
+            />
+          </div>
+          {methodError && <span role="alert">{methodError}</span>}
+          {toolbarActions && <div className="source-toolbar-actions">{toolbarActions}</div>}
+        </div>
+      )}
+      {!changeNavigation && methodError && (
+        <p className="code-toolbar" role="alert">
+          {methodError}
+        </p>
+      )}
       <div
-        className={`source-code syntax-light ${dragRange ? 'source-dragging' : ''}`}
+        className={`source-code syntax-light ${dragRange ? 'source-dragging' : ''} ${inlineEditing ? 'source-editable' : ''}`}
+        contentEditable={inlineEditing ? true : undefined}
+        suppressContentEditableWarning
+        spellCheck={inlineEditing ? false : undefined}
+        autoCorrect={inlineEditing ? 'off' : undefined}
+        autoCapitalize={inlineEditing ? 'off' : undefined}
+        role={inlineEditing ? 'textbox' : undefined}
+        aria-multiline={inlineEditing ? true : undefined}
+        aria-label={inlineEditing ? t('Editing {0}', evidence.path) : undefined}
+        onClick={(event) => {
+          // ⌘-click on a call opens its definition, as in the read-only view.
+          if (!inlineEditing || !(event.metaKey || event.ctrlKey)) return;
+          const span = (event.target as HTMLElement).closest<HTMLElement>('[data-edit-line]');
+          const selection = window.getSelection();
+          if (!span || !selection?.anchorNode) return;
+          const line = Number(span.dataset.editLine);
+          if (inlineEditing.chunks[line - 1] !== originalChunks[line - 1]) return;
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          range.setEnd(selection.anchorNode, selection.anchorOffset);
+          const at = range.toString().length;
+          const link = links[line - 1]?.find((item) => at >= item.start && at <= item.end);
+          if (link) onDefinition?.(link);
+        }}
         onPointerMove={(e) => {
           if (!drag.current || drag.current.pointer !== e.pointerId) return;
           drag.current.x = e.clientX;
@@ -888,6 +1202,9 @@ export function SourceCode({
           onSelect(range.startLine, range);
           if (e.currentTarget.hasPointerCapture(e.pointerId))
             e.currentTarget.releasePointerCapture(e.pointerId);
+          // Only the click that ends this drag is swallowed. Under pointer capture there may be
+          // none, and a flag left on would eat the next click, e.g. folding a method.
+          window.setTimeout(() => (suppressClick.current = false));
         }}
         onPointerCancel={() => {
           stopDrag();
@@ -913,8 +1230,14 @@ export function SourceCode({
         }}
       >
         {!!unplacedThreads.length && (
-          <details className="source-outdated-discussions" open>
-            <summary>Обсуждения предыдущей версии или другой стороны диффа</summary>
+          <details
+            className="source-outdated-discussions"
+            open
+            contentEditable={inlineEditing ? false : undefined}
+          >
+            <summary>
+              {t('Discussions of the previous version or the other side of the diff')}
+            </summary>
             {unplacedThreads.map((thread) => (
               <DiscussionThread
                 key={`${thread.root.repoId}:${thread.root.id}`}
@@ -931,6 +1254,7 @@ export function SourceCode({
           const folded = methodEntry && isCollapsed(methodEntry);
           if (folded && !methodStart) return null;
           const navigationTarget =
+            autoScroll &&
             !row.historical &&
             row.evidence.side === evidence.side &&
             row.evidence.path === evidence.path &&
@@ -947,28 +1271,40 @@ export function SourceCode({
             ? (lines[number - 1] ?? [])
             : (patchTokens.get(`${row.kind}:${number}`) ?? []);
           const threads = rowComments(row);
+          const editable =
+            !!inlineEditing && row.native && !row.historical && row.evidence.side === 'head';
+          const chunk = editable ? (inlineEditing!.chunks[number - 1] ?? '') : '';
+          // A line whose text moved into the previous one while editing; its anchors stay.
+          const joined = editable && !chunk && number > 1;
+          const Annotations = inlineEditing ? NonEditable : React.Fragment;
           return (
             <React.Fragment key={i}>
               {methodStart && methodEntry && (
                 <div
+                  contentEditable={inlineEditing ? false : undefined}
                   className={`source-method-toolbar ${methodEntry.viewed ? 'viewed' : ''}`}
                   data-source-side={folded ? evidence.side : undefined}
                   data-source-line={folded ? number : undefined}
                 >
                   <button
+                    className="source-method-name"
                     aria-expanded={!folded}
                     onClick={() => toggleMethod(methodEntry)}
                     title={methodEntry.method.signature}
                   >
-                    {folded ? '▸' : '▾'} {methodEntry.method.name}()
+                    <Icon name={folded ? 'chevronRight' : 'chevronDown'} size={14} />
+                    <code>{methodEntry.method.name}()</code>
                     {folded && (
-                      <span> · {methodEntry.method.evidence.endLine - number + 1} строк</span>
+                      <span>
+                        {methodEntry.method.evidence.endLine - number + 1} {t('lines')}
+                      </span>
                     )}
                   </button>
-                  <label>
+                  <DiffStat {...(methodStats.get(methodEntry.key) ?? { added: 0, removed: 0 })} />
+                  <label className="source-method-viewed">
                     <input
                       type="checkbox"
-                      aria-label={`${methodEntry.method.name}: просмотрен`}
+                      aria-label={t('{0}: viewed', methodEntry.method.name)}
                       checked={methodEntry.viewed}
                       disabled={methodPending.has(methodEntry.key)}
                       onChange={(event) => {
@@ -984,11 +1320,13 @@ export function SourceCode({
                         });
                         onMethodViewed?.(methodEntry, event.target.checked);
                       }}
-                    />{' '}
-                    Просмотрен
+                    />
+                    {t('Viewed')}
                   </label>
                   {folded && methodsWithComments.has(methodEntry.key) && (
-                    <button onClick={() => toggleMethod(methodEntry)}>Показать комментарии</button>
+                    <button className="text-button" onClick={() => toggleMethod(methodEntry)}>
+                      {t('Show comments')}
+                    </button>
                   )}
                 </div>
               )}
@@ -1006,7 +1344,9 @@ export function SourceCode({
                     key={i}
                     data-source-side={row.historical ? 'previous' : row.evidence.side}
                     data-source-line={number}
-                    className={`source-line ${row.kind} ${navigationTarget ? 'source-navigation-target' : ''} ${selected ? 'source-selected' : ''}`}
+                    data-change-row={i}
+                    contentEditable={inlineEditing && !editable ? false : undefined}
+                    className={`source-line ${row.kind} ${joined ? 'source-line-joined' : ''} ${navigationTarget ? 'source-navigation-target' : ''} ${selected ? 'source-selected' : ''} ${changeBlocks[activeChange] && i >= changeBlocks[activeChange].start && i <= changeBlocks[activeChange].end ? 'source-current-change' : ''}`}
                     onPointerDown={(e) => {
                       if (
                         row.historical ||
@@ -1032,64 +1372,99 @@ export function SourceCode({
                       drag.current.frame = requestAnimationFrame(dragScroll);
                     }}
                     onMouseDown={(e) => {
+                      if ((e.target as HTMLElement).closest('textarea, [data-edit-line]')) return;
                       if (e.shiftKey && !e.metaKey && !e.ctrlKey) e.preventDefault();
                     }}
                     title={
                       row.historical
-                        ? 'Удалено после прошлого ревью. Нажмите, чтобы открыть прежний код.'
+                        ? t('Removed since the last review. Click to open the previous code.')
                         : undefined
                     }
-                    onClick={(e) =>
-                      row.historical
-                        ? onHistoricalSource?.(row.evidence)
-                        : select(row.evidence, e.shiftKey)
-                    }
+                    onClick={(e) => {
+                      if (row.historical) return onHistoricalSource?.(row.evidence);
+                      // While editing, a click in the code places the caret; numbers comment.
+                      if (
+                        inlineEditing &&
+                        !(e.target as HTMLElement).closest('.source-number, .source-change-marker')
+                      )
+                        return;
+                      select(row.evidence, e.shiftKey);
+                    }}
                   >
-                    <span className="source-number">{row.left}</span>
-                    <span className="source-number">{row.right}</span>
+                    <span
+                      className="source-number"
+                      contentEditable={inlineEditing ? false : undefined}
+                    >
+                      {row.left}
+                    </span>
+                    <span
+                      className="source-number"
+                      contentEditable={inlineEditing ? false : undefined}
+                    >
+                      {row.right}
+                    </span>
                     <code>
-                      <span className="source-change-marker" aria-hidden="true">
+                      <span
+                        className="source-change-marker"
+                        aria-hidden="true"
+                        contentEditable={inlineEditing ? false : undefined}
+                      >
                         {row.kind === 'addition' ? '+' : row.kind === 'deletion' ? '−' : ' '}
                       </span>
-                      <CodeTokens
-                        tokens={tokens}
-                        links={row.native ? links[number - 1] : []}
-                        onDefinition={onDefinition}
-                      />
-                      {tokens.length === 0 ? row.text || ' ' : null}
+                      {editable ? (
+                        <EditText
+                          key={`${generation}:${number}`}
+                          value={chunk}
+                          original={originalChunks[number - 1] ?? ''}
+                          line={number}
+                          path={evidence.path}
+                        />
+                      ) : (
+                        <>
+                          <CodeTokens
+                            tokens={tokens}
+                            links={row.native ? links[number - 1] : []}
+                            onDefinition={onDefinition}
+                          />
+                          {tokens.length === 0 ? row.text || ' ' : null}
+                        </>
+                      )}
                     </code>
                   </div>
-                  <CodeComments
-                    comments={threads}
-                    onDelete={row.historical ? undefined : onDeleteComment}
-                    deletableIds={
-                      comparison ? new Set(comments.map((comment) => comment.id)) : undefined
-                    }
-                  />
-                  {rowDiscussions(row).map((thread) => (
-                    <DiscussionThread
-                      key={`${thread.root.repoId}:${thread.root.id}`}
-                      thread={thread}
-                      sessionId={discussionSessionId}
-                      onReply={onDiscussionReply}
-                      onReact={onDiscussionReaction}
+                  <Annotations>
+                    <CodeComments
+                      comments={threads}
+                      onDelete={row.historical ? undefined : onDeleteComment}
+                      deletableIds={
+                        deletableCommentIds ??
+                        (comparison ? new Set(comments.map((comment) => comment.id)) : undefined)
+                      }
                     />
-                  ))}
-                  {!row.historical &&
-                    selection &&
-                    row.evidence.side === selection.side &&
-                    row.evidence.path === selection.path &&
-                    number === selection.endLine &&
-                    commentEditor && (
-                      <div
-                        className="source-inline-comment"
-                        ref={editor}
-                        role="region"
-                        aria-label="Комментарий к выделенному фрагменту"
-                      >
-                        {commentEditor}
-                      </div>
-                    )}
+                    {rowDiscussions(row).map((thread) => (
+                      <DiscussionThread
+                        key={`${thread.root.repoId}:${thread.root.id}`}
+                        thread={thread}
+                        sessionId={discussionSessionId}
+                        onReply={onDiscussionReply}
+                        onReact={onDiscussionReaction}
+                      />
+                    ))}
+                    {!row.historical &&
+                      selection &&
+                      row.evidence.side === selection.side &&
+                      row.evidence.path === selection.path &&
+                      number === selection.endLine &&
+                      commentEditor && (
+                        <div
+                          className="source-inline-comment"
+                          ref={editor}
+                          role="region"
+                          aria-label={t('Comment on the selected fragment')}
+                        >
+                          {commentEditor}
+                        </div>
+                      )}
+                  </Annotations>
                 </>
               )}
             </React.Fragment>
@@ -1099,8 +1474,9 @@ export function SourceCode({
     </>
   );
 }
-export function ContractViewer({ contract }: { contract: Contract }) {
-  const [side, setSide] = useState<'before' | 'after'>('after');
+/** The OpenAPI specification as Swagger UI, before or after the change; it never calls the API. */
+export function SwaggerView({ contract }: { contract: Contract }) {
+  const [side, setSide] = useState<'before' | 'after'>(contract.after ? 'after' : 'before');
   const spec = contract[side];
   // Prevent Swagger from fetching external refs or making API calls from an untrusted spec.
   const safeSpec = spec
@@ -1111,17 +1487,17 @@ export function ContractViewer({ contract }: { contract: Contract }) {
       )
     : null;
   return (
-    <section className="panel swagger-panel">
+    <section className="swagger-panel">
       <div className="segmented">
         <button className={side === 'before' ? 'active' : ''} onClick={() => setSide('before')}>
-          До изменения
+          {t('Before the change')}
         </button>
         <button className={side === 'after' ? 'active' : ''} onClick={() => setSide('after')}>
-          После изменения
+          {t('After the change')}
         </button>
       </div>
       {safeSpec ? (
-        <Suspense fallback={<p>Открываем спецификацию…</p>}>
+        <Suspense fallback={<p>{t('Opening the specification…')}</p>}>
           <Swagger
             spec={safeSpec}
             supportedSubmitMethods={[]}
@@ -1130,13 +1506,13 @@ export function ContractViewer({ contract }: { contract: Contract }) {
             defaultModelsExpandDepth={-1}
             requestInterceptor={(request) => {
               throw new Error(
-                `Сетевые обращения Swagger отключены: ${request.method ?? 'request'}`,
+                t('Swagger network requests are disabled: {0}', request.method ?? 'request'),
               );
             }}
           />
         </Suspense>
       ) : (
-        <Empty title="Спецификация отсутствует в этой версии" />
+        <Empty title={t('The specification is missing in this version')} />
       )}
     </section>
   );
@@ -1160,183 +1536,255 @@ export function Setup({
     [prs, setPrs] = useState<Record<string, PullRequest[]>>({}),
     [loading, setLoading] = useState(''),
     [error, setError] = useState('');
+  const [mode, setMode] = useState<'pr' | 'local'>('pr');
+  const [baseRefs, setBaseRefs] = useState<Record<string, string>>({});
   async function work(label: string, fn: () => Promise<void>) {
     setLoading(label);
     setError('');
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading('');
     }
   }
   async function pulls(repo: Repository) {
-    await work('Загружаем PR', async () => {
+    if (repo.slug.startsWith('local/')) return;
+    await work(t('Loading PRs'), async () => {
       const rows = await api<PullRequest[]>(`/repositories/${repo.id}/pulls`);
       setPrs((p) => ({ ...p, [repo.id]: rows }));
     });
   }
   return (
-    <div className="modal-backdrop">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label="Новая сессия ревью"
-        className="modal setup-modal"
-      >
-        <div className="section-heading">
-          <div>
-            <div className="eyebrow">НОВАЯ СЕССИЯ</div>
-            <h2>Подключите контекст ревью</h2>
-          </div>
-          <button disabled={!!loading} onClick={onClose}>
-            ×
-          </button>
+    <Dialog
+      className="modal setup-modal"
+      dismissible={!loading}
+      closeOnOutsideClick={false}
+      onClose={onClose}
+    >
+      <div className="section-heading">
+        <div>
+          <div className="eyebrow">{t('NEW SESSION')}</div>
+          <DialogTitle>{t('Connect the review context')}</DialogTitle>
         </div>
-        <p>
-          Выберите локальные репозитории и по одному PR для каждого. Другие сервисы можно подключить
-          как контекст на текущем HEAD.
-        </p>
-        <label className="field-label" htmlFor="session-title">
-          Название ревью
-        </label>
+        <DialogClose asChild>
+          <IconButton icon="close" label={t('Close')} tooltip={false} disabled={!!loading} />
+        </DialogClose>
+      </div>
+      <div className="review-mode-switch" role="group" aria-label={t('Review mode')}>
+        <button
+          className={mode === 'pr' ? 'active' : ''}
+          disabled={!!loading}
+          onClick={() => {
+            setMode('pr');
+            setSelection({});
+            setError('');
+          }}
+        >
+          GitHub PR
+        </button>
+        <button
+          className={mode === 'local' ? 'active' : ''}
+          disabled={!!loading}
+          onClick={() => {
+            setMode('local');
+            setSelection({});
+            setError('');
+          }}
+        >
+          {t('Before PR · local changes')}
+        </button>
+      </div>
+      <p>
+        {mode === 'pr'
+          ? t(
+              'Choose repositories and PRs. Other services can be connected as context at their current HEAD.',
+            )
+          : t(
+              'Review of the working folder: branch commits, staged and unstaged changes, new files. By default the project’s main branch is the base; origin/main or origin/master is updated before comparing. HEAD means only changes since the last commit. No PR is needed.',
+            )}
+      </p>
+      <label className="field-label" htmlFor="session-title">
+        {t('Review title')}
+      </label>
+      <input
+        id="session-title"
+        placeholder={t('For example: order creation and payment')}
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <label className="field-label" htmlFor="repo-path">
+        {t('Git repository folder')}
+      </label>
+      <div className="input-row repo-connect-row">
         <input
-          id="session-title"
-          placeholder="Например: создание заказа и оплата"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          id="repo-path"
+          placeholder="/Users/you/projects/order-service"
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          disabled={!!loading}
         />
-        <label className="field-label" htmlFor="repo-path">
-          Каталог Git-репозитория
-        </label>
-        <div className="input-row repo-connect-row">
-          <input
-            id="repo-path"
-            placeholder="/Users/you/projects/order-service"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            disabled={!!loading}
-          />
-          <button
-            disabled={!!loading}
-            onClick={() =>
-              void work('Выберите папку в системном окне', async () => {
-                const selected = await api<{ path: string | null }>(
-                  '/repositories/pick-directory',
-                  'POST',
-                  {},
-                );
-                if (selected.path !== null) setPath(selected.path);
-              })
-            }
-          >
-            Выбрать папку…
-          </button>
-          <button
-            disabled={!path.trim() || !!loading}
-            onClick={() =>
-              void work('Подключаем', async () => {
-                const repo = await api<Repository>('/repositories', 'POST', { path: path.trim() });
-                onRepo(repo);
-                setPath('');
-              })
-            }
-          >
-            Подключить
-          </button>
-        </div>
-        <div className="repo-picker">
-          {repos.map((r) => (
-            <div className="repo-choice" key={r.id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={selection[r.id] !== undefined}
-                  onChange={(e) => {
-                    setSelection((s) => ({ ...s, [r.id]: e.target.checked ? null : undefined }));
-                    if (e.target.checked && !prs[r.id]) void pulls(r);
-                  }}
-                />
-                <span>
-                  <strong>{r.name}</strong>
-                  <small>{r.path}</small>
-                </span>
-              </label>
-              {selection[r.id] !== undefined && (
-                <div className="repo-pr">
-                  <select
-                    aria-label={`PR ${r.name}`}
-                    value={selection[r.id] ?? 'context'}
+        <button
+          disabled={!!loading}
+          onClick={() =>
+            void work(t('Choose a folder in the system dialog'), async () => {
+              const selected = await chooseRepositoryDirectory();
+              if (selected !== null) setPath(selected);
+            })
+          }
+        >
+          {t('Choose folder…')}
+        </button>
+        <button
+          disabled={!path.trim() || !!loading}
+          onClick={() =>
+            void work(t('Connecting'), async () => {
+              const repo = await api<Repository>('/repositories', 'POST', { path: path.trim() });
+              onRepo(repo);
+              setPath('');
+            })
+          }
+        >
+          {t('Connect')}
+        </button>
+      </div>
+      <div className="repo-picker">
+        {repos.map((r) => (
+          <div className="repo-choice" key={r.id}>
+            <label>
+              <input
+                type="checkbox"
+                checked={selection[r.id] !== undefined}
+                onChange={(e) => {
+                  setSelection((s) => ({ ...s, [r.id]: e.target.checked ? null : undefined }));
+                  if (
+                    mode === 'pr' &&
+                    e.target.checked &&
+                    !prs[r.id] &&
+                    !r.slug.startsWith('local/')
+                  )
+                    void pulls(r);
+                }}
+              />
+              <span>
+                <strong>{r.name}</strong>
+                <small>{r.path}</small>
+              </span>
+            </label>
+            <GitHubAccountPicker
+              repo={r}
+              disabled={!!loading}
+              onChange={(updated) => {
+                onRepo(updated);
+                if (mode === 'pr' && selection[updated.id] !== undefined) void pulls(updated);
+              }}
+            />
+            {selection[r.id] !== undefined && mode === 'local' && (
+              <LocalBasePicker
+                repo={r}
+                value={baseRefs[r.id] ?? r.defaultLocalBase ?? 'HEAD'}
+                disabled={!!loading}
+                onChange={(value) => setBaseRefs((values) => ({ ...values, [r.id]: value }))}
+              />
+            )}
+            {selection[r.id] !== undefined && mode === 'pr' && r.slug.startsWith('local/') && (
+              <p>
+                {t(
+                  'Context only · local HEAD. To review changes, choose the “Before PR · local changes” mode.',
+                )}
+              </p>
+            )}
+            {selection[r.id] !== undefined && mode === 'pr' && !r.slug.startsWith('local/') && (
+              <div className="repo-pr">
+                <select
+                  aria-label={`PR ${r.name}`}
+                  value={selection[r.id] ?? 'context'}
+                  onChange={(e) =>
+                    setSelection((s) => ({
+                      ...s,
+                      [r.id]: e.target.value === 'context' ? null : Number(e.target.value),
+                    }))
+                  }
+                >
+                  <option value="context">{t('Context only · local HEAD')}</option>
+                  {prs[r.id]?.map((p) => (
+                    <option value={p.number} key={p.number}>
+                      #{p.number} · {p.title}
+                    </option>
+                  ))}
+                </select>
+                <button disabled={!!loading} onClick={() => void pulls(r)}>
+                  ↻
+                </button>
+                <div className="input-row manual-pr">
+                  <label>{t('PR number')}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder={t('or enter a number')}
+                    value={selection[r.id] ?? ''}
                     onChange={(e) =>
                       setSelection((s) => ({
                         ...s,
-                        [r.id]: e.target.value === 'context' ? null : Number(e.target.value),
+                        [r.id]: e.target.value ? Number(e.target.value) : null,
                       }))
                     }
-                  >
-                    <option value="context">Только контекст · локальный HEAD</option>
-                    {prs[r.id]?.map((p) => (
-                      <option value={p.number} key={p.number}>
-                        #{p.number} · {p.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button disabled={!!loading} onClick={() => void pulls(r)}>
-                    ↻
-                  </button>
-                  <div className="input-row manual-pr">
-                    <label>Номер PR</label>
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="или введите номер"
-                      value={selection[r.id] ?? ''}
-                      onChange={(e) =>
-                        setSelection((s) => ({
-                          ...s,
-                          [r.id]: e.target.value ? Number(e.target.value) : null,
-                        }))
-                      }
-                    />
-                  </div>
+                  />
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
-        {error && (
-          <div role="alert" className="alert error">
-            {error}
+              </div>
+            )}
           </div>
-        )}
-        <div className="draft-footer">
-          <small>{loading || 'Код PR будет прочитан без запуска сборок и скриптов.'}</small>
-          <button
-            className="primary"
-            disabled={!!loading || !Object.values(selection).some((v) => typeof v === 'number')}
-            onClick={() =>
-              void work('Фиксируем снимки Git…', async () => {
-                const repositories = Object.entries(selection)
-                  .filter(([, pr]) => pr !== undefined)
-                  .map(([repoId, prNumber]) => ({ repoId, prNumber }));
-                const s = await api<ReviewSession>('/sessions', 'POST', {
-                  title: title.trim() || 'Новое ревью',
-                  repositories,
-                });
-                try {
-                  await onCreated(s);
-                } catch (e) {
-                  onError(String(e));
-                }
-              })
-            }
-          >
-            Создать ревью ↗
-          </button>
+        ))}
+      </div>
+      {error && (
+        <div role="alert" className="alert error">
+          {error}
         </div>
-      </section>
-    </div>
+      )}
+      <div className="draft-footer">
+        <small>{loading || t('PR code is read without running builds or scripts.')}</small>
+        <button
+          className="primary"
+          disabled={
+            !!loading ||
+            (mode === 'pr'
+              ? !Object.values(selection).some((v) => typeof v === 'number')
+              : !Object.values(selection).some((v) => v !== undefined))
+          }
+          onClick={() =>
+            void work(t('Taking Git snapshots…'), async () => {
+              const repositories = Object.entries(selection)
+                .filter(([, pr]) => pr !== undefined)
+                .map(([repoId, prNumber]) => ({
+                  repoId,
+                  prNumber: mode === 'local' ? null : prNumber,
+                  ...(mode === 'local'
+                    ? {
+                        localBase: (
+                          baseRefs[repoId] ??
+                          repos.find((repo) => repo.id === repoId)?.defaultLocalBase ??
+                          'HEAD'
+                        ).trim(),
+                      }
+                    : {}),
+                }));
+              const s = await api<ReviewSession>('/sessions', 'POST', {
+                title: title.trim() || t('New review'),
+                repositories,
+              });
+              try {
+                await onCreated(s);
+              } catch (e) {
+                onError(String(e));
+              }
+            })
+          }
+        >
+          {t('Create review ↗')}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1349,6 +1797,7 @@ export function SqlQueryDrawer({
   analysisKey,
   analyzing,
   canGenerate,
+  perMethod,
   onGenerate,
 }: {
   sessionId: string;
@@ -1359,19 +1808,13 @@ export function SqlQueryDrawer({
   analysisKey: string;
   analyzing: boolean;
   canGenerate: boolean;
+  /** SQL runs on request for this method only, so a method with SQL needs no button. */
+  perMethod?: boolean;
   onGenerate: () => Promise<void>;
 }) {
   const [preview, setPreview] = useState<SqlPreview | null>(null),
     [error, setError] = useState(''),
     [variantIndex, setVariantIndex] = useState(0);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    closeButton.current?.focus({ preventScroll: true });
-    return () => {
-      if (previous?.isConnected) previous.focus({ preventScroll: true });
-    };
-  }, []);
   useEffect(() => {
     let active = true;
     setPreview(null);
@@ -1391,13 +1834,8 @@ export function SqlQueryDrawer({
       .catch((error) => {
         if (active) setError(error.message);
       });
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', escape);
     return () => {
       active = false;
-      window.removeEventListener('keydown', escape);
     };
   }, [
     sessionId,
@@ -1415,118 +1853,175 @@ export function SqlQueryDrawer({
   const shapesDiffer =
     new Set(variants.map((variant) => variant.sql.replace(/\s+/g, ' ').trim())).size > 1;
   return (
-    <div className="drawer-backdrop" onClick={onClose}>
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sql-preview-title"
-        className="source-drawer sql-preview-drawer"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="drawer-heading">
-          <div>
-            <span className="eyebrow">
-              SQL · {evidence.side === 'head' ? 'ПОСЛЕ ИЗМЕНЕНИЯ' : 'ДО ИЗМЕНЕНИЯ'}
-            </span>
-            <h3 id="sql-preview-title">{evidence.path}</h3>
-          </div>
-          <button ref={closeButton} aria-label="Закрыть SQL" onClick={onClose}>
-            ×
-          </button>
+    <Dialog variant="drawer" className="source-drawer sql-preview-drawer" onClose={onClose}>
+      <div className="drawer-heading">
+        <div>
+          <span className="eyebrow">
+            SQL · {evidence.side === 'head' ? t('AFTER THE CHANGE') : t('BEFORE THE CHANGE')}
+          </span>
+          <DialogTitle asChild>
+            <h3>{evidence.path}</h3>
+          </DialogTitle>
         </div>
-        <div className="sql-drawer-content">
-          {error && (
-            <p className="alert error" role="alert">
-              {error}
+        <DialogClose asChild>
+          <IconButton icon="close" label={t('Close SQL')} tooltip={false} />
+        </DialogClose>
+      </div>
+      <div className="sql-drawer-content">
+        {error && (
+          <p className="alert error" role="alert">
+            {error}
+          </p>
+        )}
+        {!preview && !error && <p role="status">{t('Preparing SQL…')}</p>}
+        {preview && (
+          <>
+            <p>
+              <strong>{preview.method}()</strong> · {preview.dialect} ·{' '}
+              <code>{preview.headSha.slice(0, 7)}</code>
             </p>
-          )}
-          {!preview && !error && <p role="status">Подготавливаем SQL…</p>}
-          {preview && (
-            <>
-              <p>
-                <strong>{preview.method}()</strong> · {preview.dialect} ·{' '}
-                <code>{preview.headSha.slice(0, 7)}</code>
-              </p>
-              <p className="sql-origin">
-                {preview.origin === 'captured'
-                  ? 'SQL из предоставленной трассировки приложения'
-                  : preview.origin === 'source'
-                    ? 'Нативный SQL из исходника'
-                    : preview.origin === 'reconstructed'
-                      ? 'SQL-шаблон, восстановленный по DSL · не runtime-трассировка'
-                      : preview.origin === 'model'
-                        ? 'SQL восстановлен Codex во время анализа · не runtime-трассировка'
-                        : 'SQL для этого пути пока не получен'}
-                {preview.renderer && <small>{preview.renderer}</small>}
-              </p>
-              {sql && <CodeBlock text={sql} language="sql" />}
-              {(parameters.length > 0 || variants.length > 1) && (
-                <details open>
-                  <summary>
-                    Bind-параметры ·{' '}
-                    {variants.length > 1 ? `${variants.length} варианта` : parameters.length}
-                  </summary>
-                  {variants.length > 1 && (
-                    <label className="sql-parameter-variants">
-                      Вариант
-                      <select
-                        value={variantIndex}
-                        onChange={(event) => setVariantIndex(Number(event.target.value))}
-                      >
-                        {variants.map((variant, index) => (
-                          <option key={index} value={index}>
-                            {variant.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {shapesDiffer && (
-                    <p className="sql-variant-note">
-                      Набор полей или условия SQL зависят от выбранного варианта.
-                    </p>
-                  )}
-                  <ol>
-                    {parameters.map((parameter) => (
-                      <li key={parameter.position}>
-                        <code>?{parameter.position}</code> ← <code>{parameter.expression}</code>
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              )}
-              {!sql && (
-                <div className="sql-unavailable" role="status">
-                  <strong>Почему SQL не сформирован</strong>
-                  <ul>
-                    {(activeVariant?.unknowns ?? preview.unknowns).map((reason, index) => (
-                      <li key={index}>{reason}</li>
-                    ))}
-                  </ul>
-                  <p>
-                    Исходная DSL-цепочка доступна по ссылке ниже. Codex формирует SQL при анализе
-                    кода.
+            <p className="sql-origin">
+              {preview.origin === 'captured'
+                ? t('SQL from the provided application trace')
+                : preview.origin === 'source'
+                  ? t('Native SQL from the source')
+                  : preview.origin === 'reconstructed'
+                    ? t('SQL template rebuilt from the DSL · not a runtime trace')
+                    : preview.origin === 'model'
+                      ? t('SQL rebuilt by Codex during the analysis · not a runtime trace')
+                      : t('No SQL for this path yet')}
+              {preview.renderer && <small>{preview.renderer}</small>}
+            </p>
+            {sql && <CodeBlock text={sql} language="sql" />}
+            {(parameters.length > 0 || variants.length > 1) && (
+              <details open>
+                <summary>
+                  {t('Bind parameters ·')}{' '}
+                  {variants.length > 1 ? t('{0} variants', variants.length) : parameters.length}
+                </summary>
+                {variants.length > 1 && (
+                  <label className="sql-parameter-variants">
+                    {t('Variant')}
+                    <select
+                      value={variantIndex}
+                      onChange={(event) => setVariantIndex(Number(event.target.value))}
+                    >
+                      {variants.map((variant, index) => (
+                        <option key={index} value={index}>
+                          {variant.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {shapesDiffer && (
+                  <p className="sql-variant-note">
+                    {t('The selected fields or SQL conditions depend on the chosen variant.')}
                   </p>
-                </div>
-              )}
-              {canGenerate && (
-                <button
-                  disabled={analyzing}
-                  onClick={() => {
-                    setError('');
-                    void onGenerate().catch((error) => setError(error.message));
-                  }}
-                >
-                  {analyzing ? 'Codex формирует SQL…' : 'Дополнить SQL через Codex'}
-                </button>
-              )}
-              <button className="text-button" onClick={onCode}>
-                Открыть код запроса →
+                )}
+                <ol>
+                  {parameters.map((parameter) => (
+                    <li key={parameter.position}>
+                      <code>?{parameter.position}</code> ← <code>{parameter.expression}</code>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+            {!sql && (
+              <div className="sql-unavailable" role="status">
+                <strong>{t('Why the SQL was not generated')}</strong>
+                <ul>
+                  {(activeVariant?.unknowns ?? preview.unknowns).map((reason, index) => (
+                    <li key={index}>{reason}</li>
+                  ))}
+                </ul>
+                <p>
+                  {t(
+                    'The source DSL chain is linked below. Codex generates SQL while analyzing the code.',
+                  )}
+                </p>
+              </div>
+            )}
+            {canGenerate && (!perMethod || preview.origin === 'unavailable') && (
+              <button
+                disabled={analyzing}
+                onClick={() => {
+                  setError('');
+                  void onGenerate().catch((error) => setError(error.message));
+                }}
+              >
+                {analyzing
+                  ? t('Codex is generating SQL…')
+                  : perMethod
+                    ? t('Generate SQL for this method')
+                    : t('Complete SQL with Codex')}
               </button>
-            </>
-          )}
-        </div>
-      </aside>
+            )}
+            <button className="text-button" onClick={onCode}>
+              {t('Open query code →')}
+            </button>
+          </>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/** "+3 −3 ▪▪▪▪▫": the share of added and removed lines in five squares, as on GitHub. */
+export function DiffStat({ added, removed }: { added: number; removed: number }) {
+  const total = added + removed;
+  if (!total) return null;
+  const green = Math.round((added / total) * Math.min(5, total));
+  const red = Math.min(5, total) - green;
+  return (
+    <span className="diff-stat" title={t('Added {0}, removed {1}', added, removed)}>
+      {added > 0 && <b className="added">+{added}</b>}
+      {removed > 0 && <b className="removed">−{removed}</b>}
+      <span aria-hidden="true">
+        {Array.from({ length: 5 }, (_, i) => (
+          <i key={i} className={i < green ? 'added' : i < green + red ? 'removed' : undefined} />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** Comments and replies inside the editable code column keep their own fields. */
+function NonEditable({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="source-noedit" contentEditable={false}>
+      {children}
     </div>
   );
 }
+
+/** One current line of the editable diff; it holds several lines once text is added to it. */
+const EditText = React.memo(function EditText({
+  value,
+  original,
+  line,
+  path,
+}: {
+  value: string;
+  original: string;
+  line: number;
+  path: string;
+}) {
+  const visible = visibleText(value);
+  const lines = useMemo(() => highlightLines(visible, languageForPath(path)), [visible, path]);
+  return (
+    <span
+      className={`source-edit-text ${value !== original ? 'modified' : ''}`}
+      data-edit-line={line}
+    >
+      {lines.map((tokens, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && '\n'}
+          <CodeTokens tokens={tokens} />
+        </React.Fragment>
+      ))}
+      {(!visible || visible.endsWith('\n')) && <br />}
+    </span>
+  );
+});

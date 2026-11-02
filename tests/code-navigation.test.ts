@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { indexSource } from '../server/indexer';
-import { methodLinks, needsDefinitionPicker } from '../shared/code-navigation';
+import {
+  evidenceMethodLink,
+  methodDefinitions,
+  methodLinks,
+  needsDefinitionPicker,
+} from '../shared/code-navigation';
 const service = `class RegistryService(val orderRegistrationService: OrderRegistrationService) {
  fun run(registration: String): String {
   return orderRegistrationService.registerOrder(registration)
@@ -51,13 +56,72 @@ describe('source definition navigation', () => {
     expect(needsDefinitionPicker(link)).toBe(true);
   });
   it('requires selection when an arbitrary receiver has no established class mapping', async () => {
-    const text = service.replaceAll('orderRegistrationService', 'worker');
+    const text = service
+      .replaceAll('orderRegistrationService', 'worker')
+      .replace(': OrderRegistrationService', ': ExternalWorker');
     const source = await indexSource(text, 'repo', 'head', 'RegistryService.kt');
     const f = await fixture();
     const link = methodLinks(text, f.origin, [source, f.definition])[2][0];
     expect(needsDefinitionPicker(link)).toBe(true);
     expect(link.targets[0].signature).not.toContain('Проверьте');
   });
+  it.each(['java', 'kt'])(
+    'offers the interface and transitive implementations for %s',
+    async (ext) => {
+      const texts =
+        ext === 'java'
+          ? [
+              'package api; public interface Worker {\n String run(String value);\n }',
+              'package api; public interface Specialized extends Worker {}',
+              'package impl; import api.Specialized; class First implements Specialized { public String run(String value) { return value; } }',
+              'package impl; import api.Worker; class Second implements Worker { public String run(String value) { return value; } }',
+              'package impl; class Unrelated { public String run(String value) { return value; } }',
+              'package app; import api.Worker; class Caller { private Worker delegate; String invoke() { return delegate.run("x"); } }',
+            ]
+          : [
+              'package api\ninterface Worker { fun run(value: String): String }',
+              'package api\ninterface Specialized : Worker {}',
+              'package impl\nimport api.Specialized\nclass First : Specialized { override fun run(value: String): String { return value } }',
+              'package impl\nimport api.Worker\nclass Second : Worker { override fun run(value: String): String { return value } }',
+              'package impl\nclass Unrelated { fun run(value: String): String { return value } }',
+              'package app\nimport api.Worker\nclass Caller(val delegate: Worker) { fun invoke(): String { return delegate.run("x") } }',
+            ];
+      const indexes = await Promise.all(
+        texts.map((text, i) =>
+          indexSource(
+            text,
+            'repo',
+            'head',
+            `${['Worker', 'Specialized', 'First', 'Second', 'Unrelated', 'Caller'][i]}.${ext}`,
+          ),
+        ),
+      );
+      const base = await indexSource(texts[3], 'repo', 'base', `Second.${ext}`);
+      const other = await indexSource(texts[3], 'other', 'head', `Second.${ext}`);
+      const method = indexes[0].methods[0];
+      const targets = methodDefinitions(method, [...indexes, base, other]);
+      expect(targets.map((m) => m.owner).sort()).toEqual([
+        'api.Worker',
+        'impl.First',
+        'impl.Second',
+      ]);
+      expect(evidenceMethodLink(method.evidence, indexes)?.targets).toEqual(targets);
+      const origin = indexes[5].methods[0].evidence;
+      const link = methodLinks(texts[5], origin, indexes)
+        .flat()
+        .find((l) => l.name === 'run')!;
+      expect(link.targets.map((m) => m.owner).sort()).toEqual([
+        'api.Worker',
+        'impl.First',
+        'impl.Second',
+      ]);
+      expect(needsDefinitionPicker(link)).toBe(true);
+      // A source-file/class link must still open the class directly.
+      expect(
+        evidenceMethodLink({ ...method.evidence, startLine: 1, endLine: 1 }, indexes),
+      ).toBeNull();
+    },
+  );
   it('leaves external-library methods without a project definition as plain text', async () => {
     const f = await fixture();
     const text = 'class RegistryService { fun run() { println("test") } }';

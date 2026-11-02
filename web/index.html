@@ -1,13 +1,49 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#101511" />
+    <meta name="theme-color" content="#1f1f1e" />
+    <style>
+      .startup-screen {
+        min-height: 100dvh;
+        box-sizing: border-box;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 12px;
+        padding: 24px;
+        font: 14px system-ui;
+        text-align: center;
+        background: var(--page, #fafafa);
+        color: var(--text, #222);
+      }
+      :root[data-theme='dark'] .startup-screen {
+        background: var(--page, #1f1f1e);
+        color: var(--text, #eee);
+      }
+      .startup-screen h1,
+      .startup-screen p {
+        margin: 0;
+      }
+      .startup-screen h1 {
+        font-size: 20px;
+      }
+      .startup-screen button {
+        padding: 8px 14px;
+        cursor: pointer;
+      }
+      .startup-screen pre {
+        max-width: 75vw;
+        white-space: pre-wrap;
+        text-align: left;
+      }
+    </style>
     <title>Review — Free Solo</title>
+    <script src="/theme.js"></script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="startup-screen" role="status">Reviewer…</div></div>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

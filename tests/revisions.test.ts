@@ -71,6 +71,8 @@ describe('incremental review revisions', () => {
     await request('POST', `/api/sessions/${session.id}/analyze`, {});
     await waitFor(() => store.session(session.id)?.run?.state === 'complete');
     const original = store.session(session.id)!;
+    // API responses reference indexes instead of embedding them.
+    const pinned = store.detachSession(original).run;
     const draft = (await request('GET', `/api/sessions/${session.id}/drafts`)).json<
       ReviewDraft[]
     >()[0];
@@ -125,7 +127,7 @@ describe('incremental review revisions', () => {
       await request('POST', `/api/sessions/${session.id}/refresh`, {})
     ).json<ReviewSession>();
     expect(refreshed.history).toHaveLength(1);
-    expect(refreshed.history![0].run).toEqual(original.run);
+    expect(refreshed.history![0].run).toEqual(pinned);
     expect(refreshed.history![0].drafts[0].body).toBe('Review question');
     expect(refreshed.update!.changes[0].files.map((file) => file.path)).toEqual([path]);
     expect(refreshed.update!.discussion[0].body).toContain('Исправил');
@@ -147,7 +149,12 @@ describe('incremental review revisions', () => {
       ReviewDraft[]
     >()[0];
     expect(carried.body).toBe('Review question');
-    expect(carried.comments[0]).toMatchObject({ selected: false, evidence: null });
+    expect(carried.comments[0]).toMatchObject({
+      selected: false,
+      outdated: true,
+      origin: { snapshotId: original.snapshots[0].id },
+    });
+    expect(carried.comments[0].body).not.toContain('[Требуется перепроверка');
     await request('POST', `/api/sessions/${session.id}/analyze`, {});
     await waitFor(() => store.session(session.id)?.run?.state === 'complete');
     expect(inputs[1].followUp!.previousReviewId).toBe(original.run!.id);
@@ -163,7 +170,7 @@ describe('incremental review revisions', () => {
     expect(
       completed.run!.result.followUp!.items.find((item) => item.previousId === 'question')?.status,
     ).toBe('unknown');
-    expect(completed.history![0].run).toEqual(original.run);
+    expect(completed.history![0].run).toEqual(pinned);
     expect(completed.history![0].snapshots[0].headSha).toBe(f.pr.headRefOid);
     const after = (
       await request('POST', `/api/sessions/${session.id}/refresh`, {})
@@ -176,18 +183,40 @@ describe('incremental review revisions', () => {
       body: 'Дополнительный ответ',
       updatedAt: '2099-01-02T00:00:00Z',
     });
+    // A reply without code changes syncs the discussion but keeps the completed review.
     const replyOnly = (
       await request('POST', `/api/sessions/${session.id}/refresh`, {})
     ).json<ReviewSession>();
     expect(replyOnly.snapshots[0].id).toBe(completed.snapshots[0].id);
-    expect(replyOnly.update!.changes[0].files).toEqual([]);
-    expect(replyOnly.update!.discussion).toHaveLength(1);
-    expect(replyOnly.history).toHaveLength(2);
+    expect(replyOnly.run!.id).toBe(completed.run!.id);
+    expect(replyOnly.history).toHaveLength(1);
+    expect(replyOnly.update).toEqual(after.update);
+    expect(replyOnly.threadDiscussion?.map((comment) => comment.id)).toContain(
+      'inline:second-reply',
+    );
+    // The next commit archives the completed follow-up and carries the unseen reply into it.
+    await writeFile(
+      join(f.repo.path, path),
+      `${await readFile(join(f.repo.path, path), 'utf8')}// follow-up\n`,
+    );
+    await git(f.repo.path, ['commit', '-am', 'Follow-up commit']);
+    const nextSha = (await git(f.repo.path, ['rev-parse', 'HEAD'])).trim();
+    await git(f.repo.path, ['push', '--force', 'origin', `${nextSha}:refs/pull/12/head`]);
+    f.github.pr = { ...f.pr, headRefOid: nextSha };
+    const nextRevision = (
+      await request('POST', `/api/sessions/${session.id}/refresh`, {})
+    ).json<ReviewSession>();
+    expect(nextRevision.history).toHaveLength(2);
+    expect(nextRevision.update!.previousReviewId).toBe(completed.run!.id);
+    expect(nextRevision.update!.changes[0].files.map((file) => file.path)).toEqual([path]);
+    expect(nextRevision.update!.discussion.map((comment) => comment.id)).toEqual([
+      'inline:second-reply',
+    ]);
     failNext = true;
     await request('POST', `/api/sessions/${session.id}/analyze`, {});
     await waitFor(() => store.session(session.id)?.run?.state === 'partial');
     const failed = store.session(session.id)!;
-    expect(failed.history![1].run).toEqual(completed.run);
+    expect(store.detachSession(failed).history![1].run).toEqual(completed.run);
     expect(failed.history![1].snapshots).toEqual(completed.snapshots);
     expect(failed.run!.result.gaps.join()).toContain('Follow-up unavailable');
     await request('POST', `/api/sessions/${session.id}/analyze`, {});

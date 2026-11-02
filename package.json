@@ -1,8 +1,27 @@
 {
   "name": "free-solo-reviewer",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "Local reviewer for GitHub pull requests in Java/Kotlin Spring services: sequence diagrams, SQL, contracts and transactions linked to the exact source lines.",
   "license": "Apache-2.0",
+  "author": "kostyastruga",
+  "homepage": "https://github.com/free-solo-lab/free-solo-reviewer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/free-solo-lab/free-solo-reviewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/free-solo-lab/free-solo-reviewer/issues"
+  },
+  "keywords": [
+    "code-review",
+    "pull-request",
+    "github",
+    "codex",
+    "spring",
+    "java",
+    "kotlin",
+    "sequence-diagram"
+  ],
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,24 +31,38 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "demo": "npm run build && node --import tsx tests/demo.ts",
-    "format": "prettier --write server shared web tests docs *.ts *.json *.md",
-    "format:check": "prettier --check server shared web tests docs *.ts *.json *.md",
-    "test:codex": "node --import tsx tests/codex-smoke.ts"
+    "format": "prettier --write server shared web tests build desktop docs .github *.ts *.json *.md",
+    "format:check": "prettier --check server shared web tests build desktop docs .github *.ts *.json *.md",
+    "test:codex": "node --import tsx tests/codex-smoke.ts",
+    "desktop": "npm run build && node --import tsx desktop/run.ts",
+    "build:desktop": "npm run build && node --import tsx desktop/build.ts",
+    "desktop:package": "npm run build && node --import tsx desktop/build.ts --package",
+    "desktop:smoke": "node --import tsx desktop/smoke-service.ts",
+    "install:macos": "bash scripts/install-macos.sh"
   },
   "engines": {
     "node": "^22.13.0 || >=24.0.0"
   },
   "dependencies": {
     "@fastify/static": "^10.1.6",
+    "@fastify/websocket": "^11.3.4",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
     "@openai/codex-sdk": "^0.163.0",
+    "@radix-ui/react-dialog": "^1.3.1",
+    "@radix-ui/react-tooltip": "^1.4.1",
+    "@tanstack/react-query": "^5.104.5",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "fastify": "^5.12.7",
     "highlight.js": "^11.12.0",
     "lowlight": "^3.3.0",
+    "node-pty": "^1.1.0",
+    "proper-lockfile": "^4.1.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
+    "react-router": "^7.18.4",
     "remark-gfm": "^4.0.1",
     "swagger-ui-react": "^5.33.3",
     "tree-sitter-wasms": "^0.1.13",
@@ -38,12 +71,17 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@types/node": "^26.6.5",
+    "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@types/swagger-ui-react": "^5.18.0",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^10.0.6",
+    "electron": "^45.0.0",
+    "esbuild": "^0.28.2",
     "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
