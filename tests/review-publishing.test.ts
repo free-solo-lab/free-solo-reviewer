@@ -136,7 +136,12 @@ describe('review publishing', () => {
       action: 'APPROVE',
     });
     f.github.changed = true;
-    await expect(f.manager.publish(f.session, f.snapshot)).rejects.toThrow('новые коммиты');
+    // The page pulls the new commits as a stage when it sees this code.
+    await expect(f.manager.publish(f.session, f.snapshot)).rejects.toMatchObject({
+      message: expect.stringContaining('новые коммиты'),
+      status: 409,
+      code: 'pr-updated',
+    });
     expect(f.github.submissions).toHaveLength(0);
     f.github.changed = false;
     f.github.login = 'author';

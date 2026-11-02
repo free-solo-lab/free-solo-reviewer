@@ -1,5 +1,5 @@
 import type { ReviewDraft } from '../../shared/model';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import { IconButton } from '../icons';
 import { commentLocation } from '../components';
 import { useWorkspace } from '../workspace/state';
@@ -90,6 +90,19 @@ export function PublishReviewDialog() {
                   setDrafts((ds) => ds.map((x) => (x.snapshotId === next.snapshotId ? next : x)));
                   void reviewDiscussion.reload();
                 }
+              } catch (error) {
+                if (!(error instanceof ApiError) || error.code !== 'pr-updated') throw error;
+                // The author pushed meanwhile: pull the commits and replies as a new stage,
+                // so the comments are rechecked against the new code before they are sent.
+                await api(`/sessions/${session.id}/refresh`, 'POST', { analyze: true });
+                await load(session.id);
+                resetReviewRange();
+                void reviewDiscussion.reload();
+                setNotice(
+                  t(
+                    'The PR has new commits; they are loaded. Check the comments and send the review again.',
+                  ),
+                );
               } finally {
                 setPreview(null);
                 const ds = await api<ReviewDraft[]>(`/sessions/${session.id}/drafts`);

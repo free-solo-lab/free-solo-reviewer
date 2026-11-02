@@ -2,11 +2,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 import { writeFile, readFile } from 'node:fs/promises';
 import { fixture } from './fixtures';
+import { reviewPoints } from '../shared/review-timeline';
 import { createApp } from '../server/app';
 import { createLocalSnapshot } from '../server/repository';
 import { git } from '../server/process';
 import { recordReviewCheckpoint } from '../shared/review-workflow';
-import { selectedReviewRange } from '../shared/review-timeline';
 import { emptyModelResult, type PullRequest, type ReviewSession } from '../shared/model';
 import type { PullRequestPreview } from '../shared/pull-request-workflow';
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -113,7 +113,9 @@ it('publishes only captured reviewed paths, recovers an uncertain request withou
   expect(updated.snapshots[0].pr?.number).toBe(13);
   expect(updated.snapshots[0].reviewLineage).toBe(snapshot.reviewLineage);
   expect(updated.run?.id).toBe('analysis');
-  expect(selectedReviewRange(updated).from.id).toBe(session.workflow!.checkpoints[0].id);
+  expect(updated.workflow!.checkpoints.map((c) => c.id)).toEqual([
+    session.workflow!.checkpoints[0].id,
+  ]);
   expect(
     store.drafts(session.id).find((d) => d.snapshotId === updated.snapshots[0].id)?.comments[0]
       .body,
@@ -131,12 +133,11 @@ it('publishes only captured reviewed paths, recovers an uncertain request withou
   expect(repeated.statusCode, repeated.body).toBe(200);
   expect(publish).toHaveBeenCalledTimes(1);
   expect(analyze).not.toHaveBeenCalled();
-  const comparison = await app.inject({
-    method: 'GET',
-    url: `/api/sessions/${session.id}/review-comparison?from=${encodeURIComponent(session.workflow!.checkpoints[0].id)}`,
-  });
-  expect(comparison.statusCode, comparison.body).toBe(200);
-  expect(comparison.json().snapshots[0].files).toEqual([]);
+  // The PR carries the reviewed code unchanged, so the accepted packet is no separate stage.
+  const accepted = session.workflow!.checkpoints[0].id;
+  expect(
+    reviewPoints(updated).some((p) => p.id === accepted || p.aliases?.includes(accepted)),
+  ).toBe(false);
   expect(updated.snapshots[0].workspaceHead).toBe(beforeHead);
   const { readWorkingFile, writeWorkingFile } = await import('../server/working-files');
   const loaded = await readWorkingFile(f.repo, updated.snapshots[0], 'reviewed.txt');

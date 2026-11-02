@@ -77,6 +77,35 @@ describe('review comparison timeline', () => {
     expect(selectedReviewRange(session, undefined, 'first').from.id).toBe('first');
     expect(selectedReviewRange(session, 'unknown').from.id).toBe('second');
   });
+  it('adds no stage when a review is sent on the current code, only once new commits arrive', () => {
+    const session = makeSession();
+    const sent = (id: string, snapshotId: string) => ({
+      id,
+      key: id,
+      at: '2026-11-02T21:03:00Z',
+      kind: 'github' as const,
+      repoId: 'repo',
+      snapshotIds: [snapshotId],
+      commentIds: [],
+    });
+    session.workflow = {
+      version: 1,
+      initial: { at: session.createdAt, snapshots: [snapshot('initial')] },
+      versions: [],
+      checkpoints: [sent('review-1', 'latest')],
+    };
+    const published = selectedReviewRange(session);
+    expect(published.points.map((p) => p.id)).toEqual(['base', 'current']);
+    expect(published.from.id).toBe('base');
+    expect(selectedReviewRange(session, 'review-1').from.id).toBe('base');
+
+    // The author pushed: the sent review becomes the stage to compare with.
+    session.workflow.versions = [snapshot('latest')];
+    session.snapshots = [snapshot('newer')];
+    const updated = selectedReviewRange(session);
+    expect(updated.points.map((p) => p.id)).toEqual(['base', 'review-1', 'current']);
+    expect(updated.from.id).toBe('review-1');
+  });
   it('renders one movable boundary with names above the track and dates below, with no version dropdown', () => {
     const selected = selectedReviewRange(makeSession([revision('first')]));
     const html = renderToStaticMarkup(

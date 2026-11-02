@@ -50,7 +50,12 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
   }
   for (const checkpoint of session.workflow?.checkpoints ?? []) {
     const snapshots = checkpointSnapshots(session, checkpoint);
-    if (scope(snapshots) !== scope(session.snapshots)) continue;
+    // A review sent on the current code becomes a stage only once the PR brings new code.
+    if (
+      scope(snapshots) !== scope(session.snapshots) ||
+      contents(snapshots) === contents(session.snapshots)
+    )
+      continue;
     const key = contents(snapshots),
       prior = unique.get(key);
     unique.set(key, {

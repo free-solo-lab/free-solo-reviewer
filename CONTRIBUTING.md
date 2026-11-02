@@ -38,6 +38,13 @@ Keep test data synthetic: no real repository, organization or account names, no 
 - **Formatting** is Prettier (`npm run format`).
 - **Comments** explain why, not what.
 
+## Releases
+
+1. Pick the number by the largest change since the last tag (see [Versions](README.md#versions)): fixes only → patch, a feature or a data/settings change → minor.
+2. Set it in `package.json` and both root entries of `package-lock.json` by hand. `npm version` with npm older than 11.19 rewrites the lock and drops the platform builds of `tree-sitter`.
+3. Move the changes into a new section of `CHANGELOG.md` with **Fixed**, **Added**, **Changed** and **Security** groups and add its compare link at the bottom.
+4. Commit as `Release vX.Y.Z`, tag it with `git tag -a vX.Y.Z -m "vX.Y.Z"` and push the commit and the tag.
+
 ## Texts and languages
 
 Every text a user sees is written in English in the code and wrapped in `t()` from `shared/i18n.ts`:

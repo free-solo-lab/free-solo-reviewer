@@ -128,7 +128,7 @@ The current GitHub user is chosen in the menu at the bottom left. It defaults to
 
 Open the user menu at the bottom left → **Settings**.
 
-- **General** — the interface language, which is also the language Codex writes descriptions and answers in; the GitHub and Codex connections; the data folder.
+- **General** — the interface language, which is also the language Codex writes descriptions and answers in; the GitHub and Codex connections; the data folder; the version.
 - **Analysis and prompts** — a scheme of the analysis: its stages in the order they run, what each sends to Codex and which prompts its request is built from. Turn off change descriptions, scenario completion, SQL or test descriptions right on the scheme to save time and tokens; a skipped stage can still be run for one review from its page. Click a prompt to read or edit it in a panel on the right; required `{{variables}}` are filled in by the app.
 - **Analysis statistics** — run history with stages, Codex requests, duration and input, cached and output tokens.
 - **Issues** — report a bug, request a feature, suggest an improvement or ask a question. It becomes a public issue in [free-solo-lab/free-solo-reviewer](https://github.com/free-solo-lab/free-solo-reviewer/issues) under your GitHub account; replies show up here, with a badge in the user menu until you read them. `REVIEW_FEEDBACK_REPO` points a fork to its own repository.
@@ -158,6 +158,18 @@ In development, Vite proxies `/api` to port 4318; change the proxy in `vite.conf
 - **The app does not open: “Reviewer is damaged” or “cannot be verified”** — happens only with a copy of `Reviewer.app` downloaded from elsewhere, which is not notarized. Build it with the installer instead.
 - **Port 4318 is busy** — the demo and the regular server use the same port; run one at a time or set `REVIEW_PORT`.
 - **`ExperimentalWarning: SQLite`** in the console is expected: `node:sqlite` is still marked experimental.
+
+## Versions
+
+Releases follow [Semantic Versioning](https://semver.org/) and are tagged `vX.Y.Z`; [CHANGELOG.md](CHANGELOG.md) lists every change. **Settings → General → About** shows the version you run.
+
+| Release | Example           | What changes                                                                                                              | Updating                                           |
+| ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Patch   | 0.1.0 → 0.1.**1** | Fixes and security updates only                                                                                           | Safe, no preparation                               |
+| Minor   | 0.1.1 → 0.**2**.0 | New features; while the version is 0.x, also changes to the data format, settings or behavior, described in the changelog | Read the changelog; keep a copy of the data folder |
+| Major   | 0.9.0 → **1**.0.0 | The first stable release; after it, only a major release breaks data or settings                                          | Read the upgrade notes                             |
+
+The 0.x line is the alpha: the app shows an **alpha** badge until 1.0.0.
 
 ## Limitations
 

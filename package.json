@@ -1,6 +1,6 @@
 {
   "name": "free-solo-reviewer",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.1",
   "description": "Local reviewer for GitHub pull requests in Java/Kotlin Spring services: sequence diagrams, SQL, contracts and transactions linked to the exact source lines.",
   "license": "Apache-2.0",
   "author": "kostyastruga",

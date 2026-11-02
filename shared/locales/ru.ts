@@ -1381,6 +1381,8 @@ export const ru: Record<string, string> = {
     'Это ревью уже отправлено или заменено новым. Откройте актуальное ревью.',
   'The result of the previous submission is unknown. Check GitHub and verify again; publishing again is blocked to avoid a duplicate.':
     'Результат предыдущей отправки неизвестен. Проверьте GitHub и повторите сверку; повторная публикация заблокирована во избежание дубля.',
+  'The PR has new commits; they are loaded. Check the comments and send the review again.':
+    'В PR появились новые коммиты, они загружены. Проверьте комментарии и отправьте ревью ещё раз.',
   'New commits appeared in the PR. Refresh the snapshots and recheck the comments.':
     'В PR появились новые коммиты. Обновите снимки и перепроверьте комментарии.',
   'GitHub did not confirm access to the repository.': 'GitHub не подтвердил доступ к репозиторию.',
@@ -1644,6 +1646,13 @@ export const ru: Record<string, string> = {
     'Подключён. Вход хранит Codex в ~/.codex.',
   'Not connected. The analysis cannot run.': 'Не подключён: анализ не запустится.',
   'Change…': 'Изменить…',
+  About: 'О приложении',
+  'Reviewer {0} · alpha': 'Reviewer {0} · alpha',
+  'Patch releases (0.1.x) only fix problems; minor releases (0.x.0) add features and may change data or settings.':
+    'Патч-версии (0.1.x) только исправляют ошибки; минорные (0.x.0) добавляют возможности и могут менять данные или настройки.',
+  'What’s new': 'Что нового',
+  'Version {0}. Alpha: features and data may change.':
+    'Версия {0}. Альфа: возможности и данные могут меняться.',
   'Review data folder': 'Папка с данными ревью',
   'The database and code snapshots of all reviews. Nothing here is published.':
     'База и снимки кода всех ревью. Отсюда ничего не публикуется.',
@@ -1691,6 +1700,4 @@ export const ru: Record<string, string> = {
   'New replies to your issues': 'Новые ответы на ваши обращения',
   'issue\u0004Open': 'Открыто',
   'issue\u0004Closed': 'Закрыто',
-  'Alpha version: features and data may change.':
-    'Alpha-версия: функции и формат данных могут меняться.',
 };

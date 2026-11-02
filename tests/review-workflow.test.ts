@@ -13,7 +13,7 @@ const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
-it('keeps human checkpoints separate from analysis and restores empty current-source comparisons after restart', async () => {
+it('keeps human checkpoints separate from analysis and restores comparisons after restart', async () => {
   const f = await fixture();
   cleanup.push(f.cleanup);
   const { app, store } = createApp({
@@ -44,7 +44,8 @@ it('keeps human checkpoints separate from analysis and restores empty current-so
   expect(selectedReviewRange(session).from.id).toBe('base');
   recordReviewCheckpoint(session, snapshot.repoId, 'accepted-packet', 'local', ['c']);
   const checkpoint = session.workflow!.checkpoints[0];
-  expect(selectedReviewRange(session).from.id).toBe(checkpoint.id);
+  // The review covers the current code, so it is no stage until new commits arrive.
+  expect(selectedReviewRange(session).points.map((p) => p.id)).toEqual(['base', 'current']);
   session.history = [
     {
       id: session.run!.id,
@@ -56,9 +57,8 @@ it('keeps human checkpoints separate from analysis and restores empty current-so
   ];
   session.run = { ...session.run!, id: 'technical-2' };
   store.saveSession(session);
-  expect(selectedReviewRange(store.session(session.id)!).from.id).toBe(checkpoint.id);
-  const view = await new ReviewComparisons(store).read(session, checkpoint.id);
-  expect(view.snapshots[0].files).toEqual([]);
+  expect(selectedReviewRange(store.session(session.id)!).from.id).toBe('base');
+  const view = await new ReviewComparisons(store).read(session, 'base');
   expect(
     new ReviewComparisons(store).snapshot(store.session(session.id)!, view.snapshots[0].id)?.id,
   ).toBe(view.snapshots[0].id);
@@ -101,7 +101,10 @@ it('ignores empty commits, discussion and remote approvals without invoking anal
   expect(response.json<ReviewSession>().run).toBeNull();
   expect(response.json<ReviewSession>().history).toBeUndefined();
   expect(analyze).not.toHaveBeenCalled();
-  expect(selectedReviewRange(response.json()).from.id).toBe(session.workflow!.checkpoints[0].id);
+  expect(response.json<ReviewSession>().workflow!.checkpoints.map((c) => c.id)).toEqual([
+    session.workflow!.checkpoints[0].id,
+  ]);
+  expect(selectedReviewRange(response.json()).from.id).toBe('base');
   Object.assign(f.github, {
     remoteState: vi.fn(async () => ({ state: 'merged', headSha: sha, decision: 'approved' })),
   });

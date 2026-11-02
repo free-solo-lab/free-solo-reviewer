@@ -11,6 +11,7 @@ import { AnalysisSettings } from './AnalysisSettings';
 import { IssuesSettings } from './IssuesSettings';
 import styles from './SettingsPage.module.css';
 import { getLanguage, t, type Language } from '../../shared/i18n';
+import { APP_VERSION, RELEASE_NOTES_URL } from '../../shared/version';
 
 /** `/settings` and `/settings/general` show the general settings; older links lead to analysis. */
 export function SettingsPage() {
@@ -93,6 +94,23 @@ function GeneralSettings() {
           </div>
         </>
       )}
+      <h2 className={styles.sectionTitle}>{t('About')}</h2>
+      <div className={styles.card}>
+        <div className={styles.row}>
+          <Icon name="sparkles" />
+          <div>
+            <strong>{t('Reviewer {0} · alpha', APP_VERSION)}</strong>
+            <p className={styles.muted}>
+              {t(
+                'Patch releases (0.1.x) only fix problems; minor releases (0.x.0) add features and may change data or settings.',
+              )}
+            </p>
+          </div>
+          <a href={RELEASE_NOTES_URL} target="_blank" rel="noreferrer">
+            {t('What’s new')} <Icon name="externalLink" size={14} />
+          </a>
+        </div>
+      </div>
       {connecting === 'codex' && <CodexLoginDialog onClose={() => setConnecting(null)} />}
       {connecting === 'github' && (
         <GitHubLoginDialog

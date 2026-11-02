@@ -16,3 +16,18 @@
   padding: 4px 8px;
   font-size: 12px;
 }
+.conflict {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.conflict p {
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.conflict .toolbar {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

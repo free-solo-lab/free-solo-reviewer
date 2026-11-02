@@ -214,6 +214,7 @@ export class ReviewManager {
         throw new AppError(
           t('New commits appeared in the PR. Refresh the snapshots and recheck the comments.'),
           409,
+          'pr-updated',
         );
       const user = await this.github.user(snapshot.slug);
       if (!(await this.github.permission(snapshot.slug)))

@@ -18,6 +18,7 @@ import { SkeletonRows } from '../ui/Skeleton';
 import { isStaleRequest } from '../../shared/review-requests';
 import styles from './Sidebar.module.css';
 import { t } from '../../shared/i18n';
+import { APP_VERSION } from '../../shared/version';
 import { sessionListItem } from '../../shared/session-list';
 import { ReviewListItem } from './ReviewListItem';
 
@@ -76,7 +77,10 @@ export function Sidebar() {
           r<span>•</span>
         </div>
         review
-        <span className={styles.alpha} title={t('Alpha version: features and data may change.')}>
+        <span
+          className={styles.alpha}
+          title={t('Version {0}. Alpha: features and data may change.', APP_VERSION)}
+        >
           alpha
         </span>
       </div>

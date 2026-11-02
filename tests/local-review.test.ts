@@ -1077,12 +1077,13 @@ describe('review before creating a PR', () => {
 });
 
 describe('selected Codex packets', () => {
-  for (const [together, question] of [
-    [true, false],
-    [false, false],
-    [true, true],
+  for (const [together, question, external] of [
+    [true, false, false],
+    [false, false, false],
+    [true, true, false],
+    [false, false, true],
   ] as const)
-    it(`runs only selected comments ${together ? 'together' : 'in order'}${question ? ' after a saved question' : ''}`, async () => {
+    it(`runs only selected comments ${together ? 'together' : 'in order'}${question ? ' after a saved question' : ''}${external ? ' after explicitly accepting changed files' : ''}`, async () => {
       const f = await fixture();
       const calls: Parameters<FixProvider['run']>[0][] = [];
       const { app, store, fixes } = createApp({
@@ -1133,17 +1134,27 @@ describe('selected Codex packets', () => {
           forCodex: true,
         })),
       });
-      const response = await app.inject({
-        method: 'POST',
-        url: `/api/sessions/${session.id}/fix-chat`,
-        payload: {
-          repoId: f.repo.id,
-          action: 'step',
-          commentIds: ['second', 'first'],
-          together,
-          all: !together,
-        },
-      });
+      if (external) await writeFile(join(f.path, 'Other.java'), 'class Other {}\n');
+      const request = (acceptChanges = false) =>
+        app.inject({
+          method: 'POST',
+          url: `/api/sessions/${session.id}/fix-chat`,
+          payload: {
+            repoId: f.repo.id,
+            action: 'step',
+            commentIds: ['second', 'first'],
+            together,
+            all: !together,
+            ...(acceptChanges ? { acceptChanges: true } : {}),
+          },
+        });
+      if (external) {
+        const refused = await request();
+        expect(refused.statusCode).toBe(409);
+        expect(refused.json().code).toBe('working-folder-changed');
+        expect(calls).toHaveLength(0);
+      }
+      const response = await request(external);
       expect(response.statusCode, response.body).toBe(200);
       if (question) {
         await vi.waitFor(() => expect(store.fixChat(session.id)?.state).toBe('waiting_input'));
