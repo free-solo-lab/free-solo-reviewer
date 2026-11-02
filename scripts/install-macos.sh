@@ -2,7 +2,7 @@
 # Installs Reviewer on macOS: Homebrew, Git, Node.js and GitHub CLI when they are missing,
 # then builds Reviewer.app from source and puts it into Applications. Run it again to update.
 #
-#   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/free-solo-lab/free-solo-reviewer/main/scripts/install-macos.sh)"
+#   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/free-solo-lab/free-solo-reviewer/master/scripts/install-macos.sh)"
 #
 # REVIEWER_REPO and REVIEWER_SOURCE override the repository and the folder with the sources.
 set -euo pipefail

@@ -44,7 +44,7 @@ See [docs/FEATURES.md](docs/FEATURES.md) for a detailed tour and the HTTP API.
 Open **Terminal** (Spotlight → “Terminal”), paste one line and press Return:
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/free-solo-lab/free-solo-reviewer/main/scripts/install-macos.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/free-solo-lab/free-solo-reviewer/master/scripts/install-macos.sh)"
 ```
 
 The [installer](scripts/install-macos.sh) works on a clean Mac (Apple Silicon or Intel, macOS 13+). It installs whatever is missing — Homebrew, Git, Node.js 24 and the GitHub CLI — builds **Reviewer.app** from source, puts it into Applications and opens it. Homebrew asks for your Mac password once. The first build takes about five minutes. Run the same line again to update.
