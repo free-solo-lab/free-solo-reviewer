@@ -165,7 +165,7 @@ In development, Vite proxies `/api` to port 4318; change the proxy in `vite.conf
 - A snapshot holds up to 6000 text files or 64 MB per side, and files up to 1 MB. Model context is capped at 550,000 characters with changes first; truncation is reported in the result.
 - SQL is the model's reconstruction with explicit unknowns, not a query captured from a real ORM.
 - Several PRs in one review are published separately, without a shared transaction.
-- `npm audit` reports 3 low-severity issues in `swagger-ui-react → swagger-client → deepmerge`; the fix needs a major downgrade of Swagger UI. Swagger UI receives only local contracts, and outgoing requests are blocked by the CSP.
+- The production audit reports 3 low-severity entries in `swagger-ui-react → swagger-client → deepmerge`, all from [one advisory](https://github.com/advisories/GHSA-gcqx-w48m-w2h4). No patched `deepmerge` release is available yet. Swagger UI receives only local contracts, and outgoing requests are blocked by the CSP.
 
 ## Development
 
@@ -188,6 +188,14 @@ npm run build
 ```
 
 `npm run test:codex` runs the real Codex SDK on a small synthetic project; it uses model quota but publishes nothing.
+
+CI checks production dependencies with `npm audit --omit=dev --audit-level=moderate`.
+Scoped `overrides` select patched `glob` 14 for `@fastify/static` and `minimatch` 11
+for `@swagger-api/apidom-reference` until those packages update their dependency ranges.
+These keep the current Fastify and Swagger UI versions; `npm audit fix --force`
+would instead downgrade them across major versions. Recheck and remove the overrides
+when the parent packages accept the patched versions. Development-only dependencies
+are outside this audit gate.
 
 To plug in another model, implement `AnalysisProvider` from `server/provider.ts`. Interface texts are written in English in the code and translated in `shared/locales/`; [CONTRIBUTING.md](CONTRIBUTING.md) explains how to add a message or a language. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
