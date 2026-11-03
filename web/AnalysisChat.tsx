@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FixChatWindow } from './FixChat';
 import { useWorkspace } from './workspace/state';
-import type { FixChat } from '../shared/fix-chat';
+import type { FixChat, FixChatEvent } from '../shared/fix-chat';
 import type { AnalysisRun, ReviewSession, Snapshot } from '../shared/model';
 import { api } from './api';
 import { fetchSession } from './sessions';
@@ -11,6 +11,7 @@ import { cx } from './ui/cx';
 import styles from './AnalysisChat.module.css';
 import { errorMessage } from '../shared/errors';
 import { getLanguage, t } from '../shared/i18n';
+import { commandSummary, fileChangesSummary, fixCommandSummary } from '../shared/command-summary';
 
 const TerminalView = lazy(() => import('./TerminalView'));
 const labels: Record<string, string> = {
@@ -89,14 +90,27 @@ export function AnalysisChat({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const scroll = useRef<HTMLDivElement>(null),
+    content = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
     follow = useRef(true);
   useEffect(() => {
     if (!text && input.current) input.current.style.height = '';
   }, [text]);
-  useEffect(() => {
+  const logOpen = open && tab === 'codex';
+  // The log follows the latest action unless you scrolled up to read; it opens at the end.
+  const toEnd = () => {
     if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [run?.events.length, run?.messages?.length, open]);
+  };
+  useLayoutEffect(() => {
+    follow.current = true;
+    toEnd();
+  }, [logOpen]);
+  useLayoutEffect(() => {
+    if (!logOpen || !content.current) return;
+    const observer = new ResizeObserver(toEnd);
+    observer.observe(content.current);
+    return () => observer.disconnect();
+  }, [logOpen]);
   const running = run?.state === 'running';
   const canSend = !busy && !!run && !!text.trim() && run.state !== 'complete';
   const action = async (endpoint: string, body: object = {}) => {
@@ -117,18 +131,86 @@ export function AnalysisChat({
     ...(sessionData?.history?.map((r) => r.run) ?? []),
     ...(run ? [run] : []),
   ].filter((r, i, all) => all.findLastIndex((other) => other.id === r.id) === i);
-  const analysisEvents = analysisHistory.flatMap((run) => [
-    ...(run.events ?? []).map((event) => ({
-      id: `event:${run.id}:${event.seq}`,
-      at: event.at,
-      kind: event.kind ?? 'progress',
-      text: event.message,
-    })),
-    ...(run.messages ?? []).map((message) => ({ ...message, kind: 'user' })),
-  ]);
-  const timeline = [...analysisEvents, ...(fixChat?.events ?? [])].sort((a, b) =>
-    a.at.localeCompare(b.at),
-  );
+  const analysisEvents = analysisHistory.flatMap((run) => {
+    const events = run.events ?? [];
+    return [
+      ...events
+        // A finished command repeats the started one with its output; keep only the latest.
+        .filter(
+          (event, i) =>
+            event.kind !== 'tool' ||
+            !events
+              .slice(i + 1)
+              .some(
+                (later) => later.kind === 'tool' && later.message.startsWith(`${event.message}\n`),
+              ),
+        )
+        .map((event) => ({
+          id: `event:${run.id}:${event.seq}`,
+          at: event.at,
+          kind: event.kind ?? 'progress',
+          text: event.message,
+        })),
+      ...(run.messages ?? []).map((message) => ({ ...message, kind: 'user' })),
+    ];
+  });
+  const timeline: (Omit<FixChatEvent, 'kind'> & { kind: string })[] = [
+    ...analysisEvents,
+    ...(fixChat?.events ?? []),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const title = (item: (typeof timeline)[number]) =>
+    item.kind === 'user'
+      ? t('You')
+      : item.kind === 'tool'
+        ? t('Reading local code')
+        : item.kind === 'command'
+          ? t('Execution and checks')
+          : item.kind === 'files'
+            ? t('File changes')
+            : item.kind === 'rollback'
+              ? t('Summary of changes and rollback point')
+              : item.kind === 'request'
+                ? item.request?.kind === 'question'
+                  ? t('Question from Codex')
+                  : t('Approval needed')
+                : 'Codex';
+  const body = (item: (typeof timeline)[number]) => {
+    const command = item.text.split('\n')[0];
+    if (item.kind === 'assistant' || item.kind === 'user') return <Markdown>{item.text}</Markdown>;
+    if (item.kind === 'tool')
+      return (
+        <p className={styles.action} title={command}>
+          {commandSummary(item.text)}
+        </p>
+      );
+    if (item.kind === 'command')
+      return (
+        <p className={styles.action} title={command}>
+          {fixCommandSummary(item.text)}
+        </p>
+      );
+    if (item.kind === 'files')
+      return <p className={styles.action}>{fileChangesSummary(item.text)}</p>;
+    if (item.kind === 'request' && item.request) return <Markdown>{item.request.prompt}</Markdown>;
+    if (item.kind === 'plan' && item.tasks)
+      return (
+        <ul className={styles.plan}>
+          {item.tasks.map((task, index) => (
+            <li key={index}>
+              {task.completed ? '✓' : '○'} {task.text}
+            </li>
+          ))}
+        </ul>
+      );
+    if (item.kind === 'rollback')
+      return (
+        <details>
+          <summary>{item.text.split('\n')[0]}</summary>
+          <pre>{item.text.split('\n').slice(1).join('\n')}</pre>
+        </details>
+      );
+    return <pre>{item.text}</pre>;
+  };
   return (
     <section
       className={cx(styles.analysisChat, open && styles.expanded)}
@@ -205,15 +287,6 @@ export function AnalysisChat({
                 )
                 .join('; ')}
             </span>
-            <button
-              className="text-button"
-              onClick={() => {
-                setFixChatOpen(!fixChatOpen);
-                setOpen(true);
-              }}
-            >
-              {fixChatOpen ? t('Analysis') : t('Fixes with Codex')}
-            </button>
             {run?.usage && (
               <small title={t('Input includes cached tokens')}>
                 {t('Input')} {run.usage.input.toLocaleString(getLanguage())} {t('· Cache')}{' '}
@@ -234,9 +307,8 @@ export function AnalysisChat({
           />
         </Suspense>
       )}
-      {open && tab === 'codex' && fixChatOpen && (
+      {fixChatOpen && (
         <FixChatWindow
-          embedded
           sessionId={sessionId}
           snapshots={snapshots}
           analysisRunning={!!running}
@@ -248,20 +320,9 @@ export function AnalysisChat({
             await api(`/sessions/${sessionId}/refresh`, 'POST', { analyze: true });
             await load(sessionId);
           }}
-          history={analysisEvents.map((event) => ({
-            ...event,
-            kind:
-              event.kind === 'user'
-                ? 'user'
-                : event.kind === 'assistant'
-                  ? 'assistant'
-                  : event.kind === 'tool'
-                    ? 'command'
-                    : 'status',
-          }))}
         />
       )}
-      {open && tab === 'codex' && !fixChatOpen && (
+      {logOpen && (
         <>
           <div
             className={styles.analysisChatLog}
@@ -280,34 +341,27 @@ export function AnalysisChat({
                 )}
               </p>
             )}
-            {timeline.map((item) => (
-              <article
-                key={item.id}
-                className={cx(
-                  styles.analysisChatEntry,
-                  item.kind === 'user' && styles.user,
-                  item.kind === 'tool' && styles.tool,
-                )}
-              >
-                <small>
-                  {item.kind === 'user'
-                    ? t('You')
-                    : item.kind === 'tool'
-                      ? t('Reading local code')
-                      : 'Codex'}{' '}
-                  ·{' '}
-                  {new Date(item.at).toLocaleTimeString(getLanguage(), {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </small>
-                {item.kind === 'assistant' || item.kind === 'user' ? (
-                  <Markdown>{item.text}</Markdown>
-                ) : (
-                  <pre>{item.text}</pre>
-                )}
-              </article>
-            ))}
+            <div ref={content}>
+              {timeline.map((item) => (
+                <article
+                  key={item.id}
+                  className={cx(
+                    styles.analysisChatEntry,
+                    item.kind === 'user' && styles.user,
+                    (item.kind === 'tool' || item.kind === 'command') && styles.tool,
+                  )}
+                >
+                  <small>
+                    {title(item)} ·{' '}
+                    {new Date(item.at).toLocaleTimeString(getLanguage(), {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </small>
+                  {body(item)}
+                </article>
+              ))}
+            </div>
           </div>
           {error && (
             <p className={styles.error} role="alert">

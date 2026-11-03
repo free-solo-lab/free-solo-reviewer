@@ -13,6 +13,7 @@ import styles from './FixChat.module.css';
 import { FixPlan } from './FixPlan';
 import { errorMessage } from '../shared/errors';
 import { t } from '../shared/i18n';
+import { fileChangesSummary, fixCommandSummary } from '../shared/command-summary';
 
 const states: Record<FixChat['state'], string> = {
   planning: t('Codex is drafting a plan…'),
@@ -32,11 +33,7 @@ export function FixChatWindow({
   onSave,
   onRefresh,
   onClose,
-  embedded = false,
-  history = [],
 }: {
-  embedded?: boolean;
-  history?: import('../shared/fix-chat').FixChatEvent[];
   sessionId: string;
   snapshots: Snapshot[];
   analysisRunning: boolean;
@@ -213,20 +210,18 @@ export function FixChatWindow({
       setBusy(false);
     }
   };
-  const events = [...history, ...(chat?.events ?? [])].sort((a, b) => a.at.localeCompare(b.at));
-  const content = (
-    <>
-      {!embedded && (
-        <header className={styles.fixChatHeading}>
-          <div>
-            <DialogTitle>{t('Fixes with Codex')}</DialogTitle>
-            <small>{chat?.turnId ? states[chat.state] : t('Comments → plan → fixes')}</small>
-          </div>
-          <DialogClose asChild>
-            <IconButton icon="close" label={t('Close the fixes chat')} tooltip={false} />
-          </DialogClose>
-        </header>
-      )}
+  const events = [...(chat?.events ?? [])].sort((a, b) => a.at.localeCompare(b.at));
+  return (
+    <Dialog className={styles.fixChatWindow} closeOnOutsideClick={false} onClose={onClose}>
+      <header className={styles.fixChatHeading}>
+        <div>
+          <DialogTitle>{t('Fixes with Codex')}</DialogTitle>
+          <small>{chat?.turnId ? states[chat.state] : t('Comments → plan → fixes')}</small>
+        </div>
+        <DialogClose asChild>
+          <IconButton icon="close" label={t('Close the fixes chat')} tooltip={false} />
+        </DialogClose>
+      </header>
       <div className={styles.fixChatContext}>
         <select
           aria-label={t('Repository for fixes')}
@@ -335,17 +330,20 @@ export function FixChatWindow({
                   ))}
                 </ul>
               </>
-            ) : event.kind === 'command' || event.kind === 'files' || event.kind === 'rollback' ? (
+            ) : event.kind === 'command' || event.kind === 'files' ? (
+              <>
+                <strong>
+                  {event.kind === 'command' ? t('Execution and checks') : t('File changes')}
+                </strong>
+                <p title={event.kind === 'command' ? event.text.split('\n')[0] : undefined}>
+                  {event.kind === 'command'
+                    ? fixCommandSummary(event.text)
+                    : fileChangesSummary(event.text)}
+                </p>
+              </>
+            ) : event.kind === 'rollback' ? (
               <details>
-                <summary>
-                  {
-                    {
-                      command: t('Execution and checks'),
-                      files: t('File changes'),
-                      rollback: t('Summary of changes and rollback point'),
-                    }[event.kind]
-                  }
-                </summary>
+                <summary>{t('Summary of changes and rollback point')}</summary>
                 <pre>{event.text}</pre>
               </details>
             ) : (
@@ -488,13 +486,6 @@ export function FixChatWindow({
         </div>
         {analysisRunning && <small>{t('Wait for the current analysis to finish.')}</small>}
       </footer>
-    </>
-  );
-  return embedded ? (
-    <div className={styles.embedded}>{content}</div>
-  ) : (
-    <Dialog className={styles.fixChatWindow} closeOnOutsideClick={false} onClose={onClose}>
-      {content}
     </Dialog>
   );
 }

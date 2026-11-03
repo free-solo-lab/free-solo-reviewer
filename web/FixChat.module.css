@@ -245,34 +245,3 @@
 .stepHistory .stepMark {
   color: var(--green);
 }
-
-.embedded {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-.embedded .fixChatCompose textarea {
-  min-height: 36px;
-}
-.embedded .fixChatContext {
-  padding: 5px 12px;
-}
-
-.embedded .fixPlan {
-  max-height: 100px;
-  overflow: auto;
-  flex-shrink: 0;
-  padding: 4px 0;
-}
-.embedded .fixChatMessages {
-  min-height: 50px;
-}
-.embedded .fixChatCompose {
-  flex-shrink: 0;
-  padding: 5px 12px;
-}
-.embedded .fixChatActions {
-  margin-top: 4px;
-}

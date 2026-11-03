@@ -58,6 +58,17 @@
 .analysisChatEntry > small {
   font-size: 10.5px;
 }
+.analysisChatEntry p.action {
+  margin: 1px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.analysisChatEntry ul.plan {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
 .analysisChatEntry.user {
   border-color: #9273b3;
   background: #f5f0fa;
