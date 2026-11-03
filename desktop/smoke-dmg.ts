@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { command } from '../server/process.js';
+import { verifyApplicationSignature } from './signing.js';
 
 const { values } = parseArgs({ options: { image: { type: 'string' } } });
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -31,7 +32,10 @@ try {
   ]);
   mounted = true;
   assert.equal(await readlink(join(mount, 'Applications')), '/Applications');
+  assert.equal(await readFile(join(mount, '.metadata_never_index'), 'utf8'), '');
+  assert.match(await readFile(join(mount, 'Install Reviewer.txt'), 'utf8'), /Reviewer\.app/);
   const app = join(mount, 'Reviewer.app');
+  await verifyApplicationSignature(app);
   assert((await lstat(join(app, 'Contents/MacOS/Reviewer'))).mode & 0o111);
   assert(
     (
@@ -41,19 +45,15 @@ try {
   await command('/usr/bin/ditto', [app, installed], { timeout: 300000 });
   await command('/usr/bin/hdiutil', ['detach', mount]);
   mounted = false;
-  console.log(
-    await command(
-      process.execPath,
-      [
-        '--import',
-        'tsx',
-        fileURLToPath(new URL('smoke-service.ts', import.meta.url)),
-        '--app',
-        installed,
-      ],
-      { cwd: root, timeout: 180000 },
-    ),
-  );
+  await verifyApplicationSignature(installed);
+  for (const script of ['smoke-service.ts', 'smoke-gui.ts'])
+    console.log(
+      await command(
+        process.execPath,
+        ['--import', 'tsx', fileURLToPath(new URL(script, import.meta.url)), '--app', installed],
+        { cwd: root, timeout: 180000 },
+      ),
+    );
 } finally {
   // Never remove a mount point recursively unless its volume has been detached.
   if (mounted) await command('/usr/bin/hdiutil', ['detach', mount]);

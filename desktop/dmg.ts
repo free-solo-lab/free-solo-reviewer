@@ -1,7 +1,10 @@
-import { mkdir, mkdtemp, rename, rm, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { command } from '../server/process.js';
+import { inAllLanguages, t } from '../shared/i18n.js';
+
+const imageTimeoutMs = 5 * 60_000;
 
 const IMAGE_ATTEMPTS = 3;
 
@@ -25,8 +28,17 @@ export async function createDiskImage(options: {
       timeout: 300000,
     });
     await symlink('/Applications', join(contents, 'Applications'));
+    await writeFile(join(contents, '.metadata_never_index'), '');
+    await writeFile(
+      join(contents, 'Install Reviewer.txt'),
+      inAllLanguages(
+        'Installing Reviewer\n\n1. Quit Reviewer before updating.\n2. Drag Reviewer.app onto Applications. If prompted, choose Replace.\n3. Eject this disk image.\n4. Open Reviewer from Applications.\n\nSpotlight can show copies on mounted images and in old build folders. Eject images and remove old copies you no longer need.\n\nThese builds are ad-hoc signed, without Apple notarization. If macOS asks for permission, use System Settings > Privacy & Security > Open Anyway. If it says the app is damaged, verify the download checksum and download the latest release again. See https://github.com/free-solo-lab/free-solo-reviewer/releases/latest',
+      ).join('\n\n--------------------\n\n') + '\n',
+    );
     const image = join(temporary, filename);
     for (let attempt = 1; ; attempt++) {
+      const started = performance.now();
+      console.log(t('Creating DMG (limit: {0} s): {1}', imageTimeoutMs / 1000, destination));
       try {
         await rm(image, { force: true });
         await command(
@@ -37,20 +49,30 @@ export async function createDiskImage(options: {
             'Reviewer',
             '-srcfolder',
             contents,
+            '-nospotlight',
             '-fs',
             'HFS+',
             '-format',
             'UDZO',
             image,
           ],
-          { timeout: 300000 },
+          { timeout: imageTimeoutMs },
         );
+        console.log(t('DMG created in {0} s.', ((performance.now() - started) / 1000).toFixed(1)));
         break;
       } catch (error) {
-        // GitHub's macOS runners now and then fail `hdiutil create` without a message; it
-        // succeeds when run again.
+        console.error(
+          t(
+            'DMG creation failed after {0} s (limit: {1} s).',
+            ((performance.now() - started) / 1000).toFixed(1),
+            imageTimeoutMs / 1000,
+          ),
+        );
+        // Keep the upstream retry policy for intermittent failures on hosted macOS runners.
         if (attempt >= IMAGE_ATTEMPTS) throw error;
-        console.warn(`hdiutil create failed (attempt ${attempt} of ${IMAGE_ATTEMPTS}); retrying.`);
+        console.warn(
+          t('hdiutil create failed (attempt {0} of {1}); retrying.', attempt, IMAGE_ATTEMPTS),
+        );
         await delay((options.retryDelayMs ?? 5000) * attempt);
       }
     }

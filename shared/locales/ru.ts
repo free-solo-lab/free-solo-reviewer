@@ -1740,4 +1740,25 @@ export const ru: Record<string, string> = {
   'issue\u0004Open': 'Открыто',
   'issue\u0004Closed': 'Закрыто',
   'Building Reviewer.dmg…': 'Собираем Reviewer.dmg…',
+  'Creating DMG (limit: {0} s): {1}': 'Создаём DMG (лимит: {0} с): {1}',
+  'DMG creation failed after {0} s (limit: {1} s).':
+    'Ошибка создания DMG через {0} с (лимит: {1} с).',
+  'DMG created in {0} s.': 'DMG создан за {0} с.',
+  'hdiutil create failed (attempt {0} of {1}); retrying.':
+    'Ошибка hdiutil create (попытка {0} из {1}); повторяем.',
+  'Reviewer could not start or connect to its local server.':
+    'Reviewer не удалось запустить локальный сервер или подключиться к нему.',
+  'Reviewer could not load its window.': 'Reviewer не удалось загрузить окно приложения.',
+  'The Reviewer window stopped unexpectedly.': 'Окно Reviewer неожиданно завершило работу.',
+  'Reviewer encountered an unexpected error.': 'В Reviewer произошла непредвиденная ошибка.',
+  'The Reviewer server stopped unexpectedly.': 'Сервер Reviewer неожиданно завершил работу.',
+  'Show logs': 'Показать логи',
+  'Could not open the logs folder': 'Не удалось открыть папку с логами',
+  'The Reviewer server did not stop after SIGKILL.': 'Сервер Reviewer не завершился после SIGKILL.',
+  'Reviewer startup failed and its server could not be stopped.':
+    'Не удалось запустить Reviewer и остановить его сервер.',
+  'Copy diagnostics': 'Скопировать диагностику',
+  'Show app in Finder': 'Показать приложение в Finder',
+  'Installing Reviewer\n\n1. Quit Reviewer before updating.\n2. Drag Reviewer.app onto Applications. If prompted, choose Replace.\n3. Eject this disk image.\n4. Open Reviewer from Applications.\n\nSpotlight can show copies on mounted images and in old build folders. Eject images and remove old copies you no longer need.\n\nThese builds are ad-hoc signed, without Apple notarization. If macOS asks for permission, use System Settings > Privacy & Security > Open Anyway. If it says the app is damaged, verify the download checksum and download the latest release again. See https://github.com/free-solo-lab/free-solo-reviewer/releases/latest':
+    'Установка Reviewer\n\n1. Перед обновлением закройте Reviewer.\n2. Перетащите Reviewer.app на Applications. Если появится запрос, выберите «Заменить».\n3. Извлеките этот образ диска.\n4. Откройте Reviewer из папки «Программы».\n\nSpotlight может показывать копии на смонтированных образах и в папках старых сборок. Извлеките образы и удалите старые копии, которые вам больше не нужны.\n\nСборки имеют подпись ad-hoc, без нотарификации Apple. Если macOS запрашивает разрешение, откройте «Системные настройки» > «Конфиденциальность и безопасность» > «Всё равно открыть». Если сообщается о повреждении приложения, проверьте контрольную сумму и скачайте последний релиз заново. См. https://github.com/free-solo-lab/free-solo-reviewer/releases/latest',
 };

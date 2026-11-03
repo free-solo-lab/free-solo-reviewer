@@ -40,6 +40,7 @@
     "desktop:dmg": "npm run build && node --import tsx desktop/build.ts --dmg",
     "desktop:dmg:smoke": "node --import tsx desktop/smoke-dmg.ts",
     "desktop:smoke": "node --import tsx desktop/smoke-service.ts",
+    "desktop:gui:smoke": "node --import tsx desktop/smoke-gui.ts",
     "install:macos": "bash scripts/install-macos.sh"
   },
   "engines": {

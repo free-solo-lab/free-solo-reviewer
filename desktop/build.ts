@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { command } from '../server/process.js';
 import { t } from '../shared/i18n.js';
 import { createDiskImage, createUpdateArchive } from './dmg.js';
+import { macSigning, verifyApplicationSignature } from './signing.js';
 import {
   copyWebAssets,
   installRuntimeDependencies,
@@ -157,9 +158,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       appBundleId: 'lab.freesolo.reviewer',
       appCategoryType: 'public.app-category.developer-tools',
       darwinDarkModeSupport: true,
+      osxSign: macSigning,
     });
     console.log(paths.map((path) => `${path}/Reviewer.app`).join('\n'));
-    for (const path of paths) await reportArtifactSize(join(path, 'Reviewer.app'));
+    for (const path of paths) {
+      await verifyApplicationSignature(join(path, 'Reviewer.app'));
+      await reportArtifactSize(join(path, 'Reviewer.app'));
+    }
     if (process.argv.includes('--dmg')) {
       console.log(t('Building Reviewer.dmg…'));
       for (const path of paths) {

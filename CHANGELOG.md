@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/); the README explains [what each part of the version means](README.md#versions).
 
+## [Unreleased]
+
+### Added
+
+- Native desktop failure dialogs with log access and credential-redacted diagnostic copying; a rotating `desktop.log`, renderer/server failure reporting, and app-menu shortcuts for logs, diagnostics and the running application in Finder.
+- A real Electron/React startup smoke check with an isolated profile, in addition to the existing packaged backend checks. Background update checks are disabled only in smoke mode.
+
+### Fixed
+
+- The packaged app is now fully ad-hoc signed, including nested binaries and native modules, instead of retaining the invalid Electron resource seal. Signing errors stop the build, and signatures are checked before packaging and after copying from the image. Developer ID signing and notarization remain separate requirements for Apple-trusted distribution.
+- DMGs disable Spotlight indexing and include bilingual installation/replacement instructions. The app name remains Reviewer.app so Finder can replace the installed copy normally.
+- DMG creation retains three attempts with a five-minute limit each. Build logs report each attempt's duration and configured limit; command errors preserve exit codes, termination signals and timing even when stderr is empty.
+- GUI smoke checks require the application shell and reject startup error screens. Desktop shutdown waits for its owned server even if diagnostics fail, escalating a stuck server after ten seconds; failures to open the logs folder show a recoverable native message.
+
 ## [0.2.0] — 2026-11-03
 
 A minor release: the app updates itself from now on, and the review shows your decisions on the timeline. No changes to the data format; install this version by hand once, later ones arrive by themselves.
@@ -91,6 +105,7 @@ The first public alpha. Features, the data format and settings may still change.
 - Replies and reactions for every reviewer comment on the **Comments** page: line comments, conversation comments and review summaries.
 - Secret scanning and `shellcheck` in CI; issue and pull request templates.
 
+[Unreleased]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.1...v0.1.2
