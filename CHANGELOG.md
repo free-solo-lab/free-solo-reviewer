@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-03
+
+Improved macOS application signing, startup diagnostics and shutdown reliability. No changes to the data format.
+
 ### Added
 
 - Native desktop failure dialogs with log access and credential-redacted diagnostic copying; a rotating `desktop.log`, renderer/server failure reporting, and app-menu shortcuts for logs, diagnostics and the running application in Finder.
@@ -105,7 +109,8 @@ The first public alpha. Features, the data format and settings may still change.
 - Replies and reactions for every reviewer comment on the **Comments** page: line comments, conversation comments and review summaries.
 - Secret scanning and `shellcheck` in CI; issue and pull request templates.
 
-[Unreleased]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.1...v0.1.2
