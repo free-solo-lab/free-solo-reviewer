@@ -86,23 +86,30 @@ export function ReviewTimeline({
   // An approval of older code no longer covers what is reviewed now.
   const stale =
     points[last]?.decision !== 'APPROVE' &&
-    points.slice(0, last).findLast((p) => p.decision)?.decision === 'APPROVE';
+    points.slice(0, last).findLast((p) => p.decision && p.decision !== 'COMMENT')?.decision ===
+      'APPROVE';
   const mark = (p: ReviewPoint, i: number) =>
     p.decision === 'APPROVE'
-      ? { tone: 'approved', text: t('Approved'), hint: t('You approved this version') }
+      ? { tone: 'approved', icon: 'check' as const, hint: t('You approved this version') }
       : p.decision === 'REQUEST_CHANGES'
         ? {
             tone: 'changes',
-            text: t('Changes requested'),
+            icon: 'close' as const,
             hint: t('You requested changes on this version'),
           }
-        : i === last && stale
+        : i === last && stale && !p.decision
           ? {
               tone: 'stale',
-              text: t('Review again'),
+              icon: 'refresh' as const,
               hint: t('The code changed after your approval'),
             }
-          : undefined;
+          : p.decision === 'COMMENT'
+            ? {
+                tone: 'comment',
+                icon: 'message' as const,
+                hint: t('You sent comments on this version'),
+              }
+            : undefined;
   const marks = points.map(mark);
   if (last < 1) return null;
   return (
@@ -120,13 +127,18 @@ export function ReviewTimeline({
           {points.map((p, i) => (
             <div key={p.id} data-selected={i === position || i === last}>
               {i === last ? (
-                <strong>{label(i)}</strong>
+                <strong title={marks[i]?.hint}>{label(i)}</strong>
               ) : (
                 <button
                   disabled={disabled}
                   aria-pressed={i === position}
-                  title={p.snapshots
-                    .map((s) => `${s.repoName}: ${(i ? s.headSha : s.mergeBase).slice(0, 10)}`)
+                  title={[
+                    ...p.snapshots.map(
+                      (s) => `${s.repoName}: ${(i ? s.headSha : s.mergeBase).slice(0, 10)}`,
+                    ),
+                    marks[i]?.hint,
+                  ]
+                    .filter(Boolean)
                     .join('\n')}
                   onClick={() => {
                     preview(i);
@@ -192,7 +204,6 @@ export function ReviewTimeline({
                 key={p.id}
                 style={{ left: `${(i / last) * 100}%` }}
                 data-selected={i >= position}
-                data-tone={marks[i]?.tone}
               />
             ))}
           </div>
@@ -227,6 +238,20 @@ export function ReviewTimeline({
             }}
           />
           <span className={styles.current} aria-hidden="true" />
+          {marks.map(
+            (m, i) =>
+              m && (
+                <span
+                  key={points[i].id}
+                  className={styles.decision}
+                  data-tone={m.tone}
+                  style={{ left: `${(i / last) * 100}%` }}
+                  aria-hidden="true"
+                >
+                  <Icon name={m.icon} size={10} />
+                </span>
+              ),
+          )}
         </div>
         <div className={styles.dates}>
           {points.map((p) => (
@@ -242,22 +267,9 @@ export function ReviewTimeline({
             </time>
           ))}
         </div>
-        {marks.some(Boolean) && (
-          <div className={styles.marks}>
-            {marks.map((m, i) => (
-              <span key={points[i].id} data-tone={m?.tone} title={m?.hint}>
-                {m && (
-                  <>
-                    {m.tone === 'approved' && <Icon name="check" size={11} />}
-                    {m.text}
-                  </>
-                )}
-              </span>
-            ))}
-          </div>
-        )}
         <span className={styles.sr} aria-live="polite">
           {t('Comparison: {0} → {1}', label(position), label(last))}
+          {marks.map((m, i) => m && ` · ${label(i)}: ${m.hint}`)}
         </span>
       </div>
     </div>

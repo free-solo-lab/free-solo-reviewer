@@ -82,7 +82,7 @@ export const ru: Record<string, string> = {
   'Review {0}': 'Ревью {0}',
   'You approved this version': 'Вы одобрили эту версию',
   'You requested changes on this version': 'Вы запросили изменения в этой версии',
-  'Review again': 'Нужно ревью заново',
+  'You sent comments on this version': 'Вы отправили комментарии к этой версии',
   'The code changed after your approval': 'Код изменился после вашего апрува — нужно ревью заново',
   'You approved the current version': 'Вы одобрили текущую версию',
   'Continue analysis': 'Продолжить анализ',

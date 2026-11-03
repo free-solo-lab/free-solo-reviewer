@@ -138,9 +138,10 @@ describe('review comparison timeline', () => {
         }),
       );
     };
+    const tones = () => [...render().matchAll(/data-tone="([a-z]+)"/g)].map((m) => m[1]);
     expect(reviewPoints(session).at(-1)?.decision).toBe('APPROVE');
-    expect(render()).toContain('Одобрено');
-    expect(render()).not.toContain('Нужно ревью заново');
+    expect(tones()).toEqual(['approved']);
+    expect(render()).toContain('Вы одобрили эту версию');
 
     session.workflow.versions = [snapshot('latest')];
     session.snapshots = [snapshot('newer')];
@@ -150,8 +151,40 @@ describe('review comparison timeline', () => {
       ['comment', 'APPROVE'],
       ['current', undefined],
     ]);
-    expect(render()).toContain('Одобрено');
-    expect(render()).toContain('Нужно ревью заново');
+    expect(tones()).toEqual(['approved', 'stale']);
+    expect(render()).toContain('Код изменился после вашего апрува');
+  });
+  it('marks versions you only commented on', () => {
+    const session = makeSession();
+    session.workflow = {
+      version: 1,
+      initial: { at: session.createdAt, snapshots: [snapshot('initial')] },
+      versions: [snapshot('latest')],
+      checkpoints: [
+        {
+          id: 'note',
+          key: 'note',
+          at: '2026-11-03T10:00:00Z',
+          kind: 'github',
+          repoId: 'repo',
+          snapshotIds: ['latest'],
+          commentIds: [],
+          action: 'COMMENT',
+        },
+      ],
+    };
+    session.snapshots = [snapshot('newer')];
+    expect(reviewPoints(session).map((p) => p.decision)).toEqual([undefined, 'COMMENT', undefined]);
+    const selected = selectedReviewRange(session);
+    const html = renderToStaticMarkup(
+      React.createElement(ReviewTimeline, {
+        points: selected.points,
+        from: selected.from.id,
+        onChange: async () => {},
+      }),
+    );
+    expect([...html.matchAll(/data-tone="([a-z]+)"/g)].map((m) => m[1])).toEqual(['comment']);
+    expect(html).toContain('Вы отправили комментарии к этой версии');
   });
   it('renders one movable boundary with names above the track and dates below, with no version dropdown', () => {
     const selected = selectedReviewRange(makeSession([revision('first')]));

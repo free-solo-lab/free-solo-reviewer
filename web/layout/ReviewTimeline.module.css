@@ -202,39 +202,31 @@ input.handle {
   font-size: 11px;
   line-height: 15px;
 }
-.marks {
-  display: grid;
-  grid-template-columns: repeat(var(--points), minmax(0, 1fr));
-  font-size: 11px;
-  line-height: 15px;
-  font-weight: 600;
-}
-.marks span {
-  display: inline-flex;
+.decision {
+  position: absolute;
+  z-index: 4;
+  top: 1px;
+  width: 16px;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.marks [data-tone='approved'] {
-  color: #2f8a57;
-}
-.marks [data-tone='changes'],
-.marks [data-tone='stale'] {
-  color: var(--orange);
-}
-.stops span[data-tone='approved'] {
-  width: 6px;
-  height: 6px;
+  color: #fff;
   background: #2f8a57;
+  box-shadow: 0 0 0 2px var(--paper);
+  pointer-events: none;
 }
-.stops span[data-tone='changes'] {
-  width: 6px;
-  height: 6px;
+.decision[data-tone='comment'] {
+  background: #8164b0;
+}
+.decision[data-tone='changes'],
+.decision[data-tone='stale'] {
   background: var(--orange);
+}
+.decision :global(.icon) {
+  stroke-width: 3;
 }
 .sr {
   position: absolute;
@@ -255,7 +247,8 @@ input.handle {
   .track {
     top: 21px;
   }
-  .current {
+  .current,
+  .decision {
     top: 14px;
   }
   input.handle {

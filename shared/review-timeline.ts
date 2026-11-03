@@ -14,8 +14,8 @@ export interface ReviewPoint {
   id: string;
   at: string;
   snapshots: Snapshot[];
-  /** Your standing GitHub decision on exactly this code. */
-  decision?: ReturnType<typeof reviewDecision>;
+  /** Your standing GitHub decision on exactly this code; COMMENT when you only sent comments. */
+  decision?: import('./model.js').ReviewAction;
 }
 export interface ReviewRangeComparison {
   from: string;
@@ -74,11 +74,15 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
       aliases: [...(prior?.aliases ?? []), checkpoint.id],
     });
   }
+  const decision = (key: string) => {
+    const reviews = sent.get(key) ?? [];
+    return reviewDecision(reviews) ?? (reviews.length ? ('COMMENT' as const) : undefined);
+  };
   for (const [key, point] of unique) {
-    const decision = reviewDecision(sent.get(key) ?? []);
-    if (decision) point.decision = decision;
+    const value = decision(key);
+    if (value) point.decision = value;
   }
-  const currentDecision = reviewDecision(sent.get(contents(session.snapshots)) ?? []);
+  const currentDecision = decision(contents(session.snapshots));
   const points = [...unique.values()].sort(
     (a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0),
   );
