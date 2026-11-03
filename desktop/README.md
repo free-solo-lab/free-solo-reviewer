@@ -25,13 +25,13 @@ npm run desktop:smoke -- --app /path/to/Reviewer.app
 
 The image smoke check verifies its checksum, mounts it read-only, checks the Applications link, executable permissions and framework symlinks, copies Reviewer.app into a temporary installation folder and ejects the image. It then checks the copied app's contents and backend with an isolated database: bundled Node.js, SQLite, Java and Kotlin indexing, a native terminal over WebSocket, Codex CLI startup and reuse of the running service. It rejects duplicate UI dependencies, foreign terminal binaries and unused WASM grammars. It makes no model or GitHub requests and leaves the user's Applications and data folders untouched. `desktop:smoke` without arguments still checks the app in its usual release folder.
 
-The **macOS DMG** GitHub Actions workflow runs manually or on `v*` tags, building natively on `macos-15` (arm64) and `macos-15-intel` (x64). Each job runs the image smoke check and uploads its DMG and SHA-256 file as a separate artifact, retained for 30 days. It does not create or publish GitHub Releases. After downloading and unzipping an artifact, use `shasum -a 256 -c <filename>.dmg.sha256` in its folder to verify the download.
+The **macOS DMG** GitHub Actions workflow runs manually or on `v*` tags, building natively on `macos-15` (arm64) and `macos-15-intel` (x64). Each job runs the image smoke check and uploads its DMG, update archive and SHA-256 files as a separate artifact, retained for 30 days. On a tag, a final job publishes a GitHub release with both architectures and the signed `latest.json` (see [Updates](#updates)). After downloading and unzipping an artifact, use `shasum -a 256 -c <filename>.dmg.sha256` in its folder to verify the download.
 
 Before distributing a build, also check the GUI: install through Finder, eject the DMG, launch from Applications, choose a repository, close and reopen the window, and quit the app. A replacement app should reopen the same review history.
 
 ## Package contents and size
 
-The server build's esbuild import graph determines its runtime dependencies. `desktop/runtime-package.ts` also includes packages loaded through `createRequire` or `require.resolve`: node-pty, the Java/Kotlin grammars and Codex CLI. The build creates a runtime manifest and a copy of the project lock with those installation roots, retaining locked versions, integrity hashes and overrides. `npm ci` installs only that runtime; React, Swagger UI, fonts and other interface dependencies are already bundled by Vite.
+The server build's esbuild import graph determines its runtime dependencies. `desktop/runtime-package.ts` also includes packages loaded through `createRequire` or `require.resolve`: node-pty, the Java/Kotlin grammars and Codex CLI. The build creates a runtime manifest with those installation roots and a lock that keeps only the packages reachable from them, resolved the way Node resolves them, with their locked versions, integrity hashes and overrides. `npm ci` installs every entry of a lock, so leaving the rest out is what keeps React, Swagger UI, fonts and other interface dependencies, already bundled by Vite, out of the app.
 
 After installation, the build keeps only `node-pty/prebuilds/darwin-<arch>` and the Java/Kotlin grammar WASMs. It preserves package licenses and fixes the terminal helper's execute bit. The cache fingerprint includes the runtime manifest, lock, architecture and packaging revision. Increase that revision when expanding retained assets so an older, pruned cache is reinstalled. The UI directory is replaced on every build to remove obsolete hashed assets.
 
@@ -45,6 +45,25 @@ Build output reports logical sizes for the runtime, UI, app and DMG; framework s
 | DMG       | 389.4 MiB             | 315.4 MiB |
 
 The DMG is about 19% smaller. Most of the remaining size is the required Codex CLI, Electron and standalone Node.js. Sizes can change with dependency versions and architecture; compare measurements using the same build environment.
+
+## Updates
+
+The app updates itself from GitHub releases:
+
+1. Fifteen seconds after start and then every six hours it downloads `latest.json` from the latest release and checks its Ed25519 signature against the key in `desktop/update-public-key.ts`. Unsigned or altered manifests are rejected.
+2. When the version is newer, it downloads `Reviewer-<version>-darwin-<arch>.zip` into `~/Library/Application Support/Reviewer/updates`, checks its size and SHA-256 from the signed manifest, unpacks it and checks the version inside.
+3. A banner and **Settings → About** offer **Restart and update**. The app quits (stopping a server it started), and `install.sh` waits for it, copies the database to `<data>/backups/before-<version>-<time>` for a minor or major release, swaps Reviewer.app, keeps the old copy in `updates/previous` and opens the new version, which removes the old copy on start. If the new app cannot be moved into place, the old one is put back and opened. The script's output is `updates/install.log`.
+
+An app that cannot replace itself (not in a writable folder, started from the disk image, or moved by macOS to a translocated copy from Downloads) offers the release page instead. Errors while checking show only in Settings; a failed download shows a banner with **Retry**.
+
+The release workflow signs `latest.json` with the `REVIEWER_UPDATE_KEY` repository secret, the PKCS#8 PEM private key; without it the release is not published. `node --import tsx desktop/update-key.ts <file.pem>` creates a new pair, writes the private key to the file and prints the public key. A new key makes installed apps reject updates until they are reinstalled once, so keep the key.
+
+To try the whole path before a release, build an app with a higher version, sign a `latest.json` for its archive with the private key and serve both locally, then start an older installed copy with its own data and the local manifest:
+
+```sh
+REVIEWER_UPDATE_URL=http://127.0.0.1:4399/latest.json REVIEW_STATE_DIR=/tmp/r/state \
+  REVIEW_DATA_DIR=/tmp/r/data REVIEW_PORT=4325 /path/to/Reviewer.app/Contents/MacOS/Reviewer
+```
 
 ## One server, one data folder
 

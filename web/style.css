@@ -473,6 +473,21 @@ nav {
   font-size: 16px;
   color: inherit;
 }
+/* Actions in a notice keep the look of buttons; only the close icon is bare. */
+.alert button.action {
+  align-self: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.alert button.action.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
 .welcome {
   padding: 40px 12px 20px;
   max-width: 960px;

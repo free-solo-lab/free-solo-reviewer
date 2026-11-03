@@ -44,6 +44,7 @@ Keep test data synthetic: no real repository, organization or account names, no 
 2. Set it in `package.json` and both root entries of `package-lock.json` by hand. `npm version` with npm older than 11.19 rewrites the lock and drops the platform builds of `tree-sitter`.
 3. Move the changes into a new section of `CHANGELOG.md` with **Fixed**, **Added**, **Changed** and **Security** groups and add its compare link at the bottom.
 4. Commit as `Release vX.Y.Z`, tag it with `git tag -a vX.Y.Z -m "vX.Y.Z"` and push the commit and the tag.
+5. The tag builds both DMGs and publishes the GitHub release with the signed `latest.json`; installed apps offer it within six hours. The `REVIEWER_UPDATE_KEY` secret must be set (see [Updates](desktop/README.md#updates)).
 
 ## Texts and languages
 

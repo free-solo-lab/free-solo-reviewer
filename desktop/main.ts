@@ -1,7 +1,22 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
-import { join } from 'node:path';
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  dialog,
+  ipcMain,
+  net,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
+import { spawn } from 'node:child_process';
+import { mkdirSync, openSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { connectOrStartService } from './service-controller.js';
 import { externalUrl, isInternalUrl } from './navigation.js';
+import { Updater } from './updater.js';
+import { UPDATE_MANIFEST_URL } from './update-manifest.js';
+import { UPDATE_PUBLIC_KEY } from './update-public-key.js';
+import { command } from '../server/process.js';
 import { isLanguage, setLanguage, t } from '../shared/i18n.js';
 
 app.setName('Reviewer');
@@ -9,6 +24,46 @@ let mainWindow: BrowserWindow | null = null;
 let service: Awaited<ReturnType<typeof connectOrStartService>> | undefined;
 let quitting = false;
 const lifetime = new AbortController();
+const updateDir = join(app.getPath('userData'), 'updates');
+const updater = new Updater({
+  currentVersion: app.getVersion(),
+  arch: process.arch,
+  // app.getAppPath() is Reviewer.app/Contents/Resources/app.
+  bundlePath: app.isPackaged ? resolve(app.getAppPath(), '../../..') : null,
+  workDir: updateDir,
+  // A local manifest lets the update path be tried end to end before a release.
+  manifestUrl: process.env.REVIEWER_UPDATE_URL ?? UPDATE_MANIFEST_URL,
+  publicKey: UPDATE_PUBLIC_KEY,
+  fetch: (url) => net.fetch(url, { cache: 'no-store' }),
+  unzip: async (archive, destination) => {
+    await command('/usr/bin/ditto', ['-x', '-k', archive, destination], { timeout: 300000 });
+  },
+  bundleVersion: async (bundle) =>
+    (
+      await command('/usr/bin/plutil', [
+        '-extract',
+        'CFBundleShortVersionString',
+        'raw',
+        '-o',
+        '-',
+        join(bundle, 'Contents/Info.plist'),
+      ])
+    ).trim(),
+  dataDir: async () => {
+    if (!service?.owned) return undefined;
+    const status = await fetch(`${service.url}/api/status`)
+      .then((response) => response.json() as Promise<{ dataDir?: string }>)
+      .catch(() => ({ dataDir: undefined }));
+    return status.dataDir;
+  },
+  spawnDetached: (file, args) => {
+    mkdirSync(updateDir, { recursive: true });
+    const log = openSync(join(updateDir, 'install.log'), 'a', 0o600);
+    spawn(file, args, { detached: true, stdio: ['ignore', log, log] }).unref();
+  },
+  quit: () => app.quit(),
+  onChange: (state) => mainWindow?.webContents.send('reviewer:update-changed', state),
+});
 async function showWindow() {
   if (!service || quitting) return;
   if (mainWindow) {
@@ -98,7 +153,7 @@ else {
         .then((response) => response.json() as Promise<{ language?: unknown }>)
         .catch(() => ({ language: undefined }));
       if (isLanguage(settings.language)) setLanguage(settings.language);
-      ipcMain.handle('reviewer:choose-directory', async (event) => {
+      const trusted = (event: IpcMainInvokeEvent) => {
         if (
           !mainWindow ||
           event.sender !== mainWindow.webContents ||
@@ -106,12 +161,32 @@ else {
           !isInternalUrl(event.senderFrame.url, service!.url)
         )
           throw new Error(t('Request source not allowed.'));
-        const result = await dialog.showOpenDialog(mainWindow, {
+        return mainWindow;
+      };
+      ipcMain.handle('reviewer:choose-directory', async (event) => {
+        const result = await dialog.showOpenDialog(trusted(event), {
           title: t('Choose a Git repository'),
           properties: ['openDirectory'],
         });
         return result.canceled ? null : (result.filePaths[0] ?? null);
       });
+      ipcMain.handle('reviewer:update-state', (event) => {
+        trusted(event);
+        return updater.state;
+      });
+      ipcMain.handle('reviewer:update-check', (event) => {
+        trusted(event);
+        return updater.check();
+      });
+      ipcMain.handle('reviewer:update-install', (event) => {
+        trusted(event);
+        return updater.install();
+      });
+      // Checked shortly after start and every six hours; installing waits for the button.
+      void updater.cleanup().catch(() => {});
+      const check = () => void updater.check();
+      setTimeout(check, 15_000).unref();
+      setInterval(check, 6 * 60 * 60 * 1000).unref();
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           {

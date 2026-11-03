@@ -44,15 +44,53 @@ jobs:
       - name: SHA-256 checksums
         working-directory: release
         run: |
-          for image in *.dmg; do
-            shasum -a 256 "$image" > "$image.sha256"
+          for file in *.dmg *.zip; do
+            shasum -a 256 "$file" > "$file.sha256"
           done
       - uses: actions/upload-artifact@v4
         with:
           name: Reviewer-darwin-${{ matrix.arch }}
           path: |
             release/*.dmg
-            release/*.dmg.sha256
+            release/*.zip
+            release/*.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  # A tag publishes a release with a signed latest.json, which installed apps check for updates.
+  release:
+    name: GitHub release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          pattern: Reviewer-darwin-*
+          merge-multiple: true
+      - name: Check the tag matches the version
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - name: Signed update manifest
+        env:
+          REVIEWER_UPDATE_KEY: ${{ secrets.REVIEWER_UPDATE_KEY }}
+        run: node --import tsx desktop/release-manifest.ts --dir assets --notes notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" assets/*
+          --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME"
+          --notes-file notes.md --verify-tag

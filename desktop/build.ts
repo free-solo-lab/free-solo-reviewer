@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { command } from '../server/process.js';
 import { t } from '../shared/i18n.js';
-import { createDiskImage } from './dmg.js';
+import { createDiskImage, createUpdateArchive } from './dmg.js';
 import {
   copyWebAssets,
   installRuntimeDependencies,
@@ -163,13 +163,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv.includes('--dmg')) {
       console.log(t('Building Reviewer.dmg…'));
       for (const path of paths) {
-        const image = await createDiskImage({
+        const artifact = {
           appPath: join(path, 'Reviewer.app'),
           outDir: join(root, 'release'),
           version: metadata.version,
-          arch: process.arch === 'arm64' ? 'arm64' : 'x64',
-        });
-        await reportArtifactSize(image);
+          arch: process.arch === 'arm64' ? ('arm64' as const) : ('x64' as const),
+        };
+        await reportArtifactSize(await createDiskImage(artifact));
+        await reportArtifactSize(await createUpdateArchive(artifact));
       }
     }
   } else console.log(source);

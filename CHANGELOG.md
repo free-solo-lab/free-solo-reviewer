@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/); the README explains [what each part of the version means](README.md#versions).
 
+## [Unreleased]
+
+### Added
+
+- The desktop app updates itself: it checks the signed `latest.json` of the latest GitHub release, downloads the new version in the background and installs it with **Restart and update** from a banner or **Settings → About**. The database is copied before a minor release, and a failed swap puts the old app back.
+- A tag publishes the GitHub release with both DMGs, update archives and the signed manifest.
+- The timeline marks each version you reviewed: a green check for an approval, a purple message for comments only, an orange cross for requested changes, and an orange refresh on the current version when the code changed after your approval. The review list shows **approved** and **review again** states.
+- A click on any earlier point of the timeline, or on the bare line, moves the comparison start there.
+
+### Changed
+
+- The Codex console is one log of the analysis and the fixes that opens at the end and follows new entries. Commands are one line saying what they did, such as “Read MethodCallInterceptors.java, lines 40–47”, instead of their output. Fixes open as a dialog from the review instead of a second view of the panel.
+- An icon in the Codex tab shows whether Codex works, waits for you, failed or is done, instead of the stage and PR line.
+
+### Fixed
+
+- The packaged runtime installs only server packages even with npm versions that install every entry of a lock; the DMG smoke check no longer fails on React.
+
 ## [0.1.3] — 2026-11-03
 
 macOS DMG distribution and smaller desktop packages. No changes to the data format or settings.

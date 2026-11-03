@@ -12,6 +12,8 @@ import { IssuesSettings } from './IssuesSettings';
 import styles from './SettingsPage.module.css';
 import { getLanguage, t, type Language } from '../../shared/i18n';
 import { APP_VERSION, RELEASE_NOTES_URL } from '../../shared/version';
+import { useDesktopUpdate } from '../useDesktopUpdate';
+import { updateStatus } from '../layout/UpdateBanner';
 
 /** `/settings` and `/settings/general` show the general settings; older links lead to analysis. */
 export function SettingsPage() {
@@ -27,6 +29,7 @@ function GeneralSettings() {
   const status = useAppStatus().data;
   const accounts = useGitHubAccounts().data;
   const [connecting, setConnecting] = useState<'github' | 'codex' | null>(null);
+  const update = useDesktopUpdate();
   const github = accounts?.current ?? status?.login;
   return (
     <section className={styles.page} aria-label={t('General')}>
@@ -105,6 +108,32 @@ function GeneralSettings() {
                 'Patch releases (0.1.x) only fix problems; minor releases (0.x.0) add features and may change data or settings.',
               )}
             </p>
+            {update && (
+              <div className={styles.update}>
+                {update.state && (
+                  <span className={styles.muted} role="status">
+                    {updateStatus(update.state)}
+                  </span>
+                )}
+                {update.state?.state === 'ready' ? (
+                  <button className="primary compact" onClick={update.install}>
+                    {t('Restart and update')}
+                  </button>
+                ) : (
+                  <button
+                    className="compact"
+                    disabled={
+                      update.state?.state === 'checking' ||
+                      update.state?.state === 'downloading' ||
+                      update.state?.state === 'installing'
+                    }
+                    onClick={update.check}
+                  >
+                    {t('Check for updates')}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <a href={RELEASE_NOTES_URL} target="_blank" rel="noreferrer">
             {t('What’s new')} <Icon name="externalLink" size={14} />

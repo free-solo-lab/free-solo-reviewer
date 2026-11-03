@@ -7,6 +7,7 @@ import { queryKeys } from '../queries';
 import { CodexLoginDialog } from '../dialogs/CodexLoginDialog';
 import { GitHubLoginDialog } from '../dialogs/GitHubLoginDialog';
 import { t } from '../../shared/i18n';
+import { UpdateBanner } from './UpdateBanner';
 
 export function Notices() {
   const {
@@ -57,6 +58,7 @@ export function Notices() {
       )}
       {/* One stack, so a notice never covers an error shown at the same corner. */}
       <div className="alerts">
+        <UpdateBanner />
         {status?.demo && (
           <div className="alert notice">
             {t(
