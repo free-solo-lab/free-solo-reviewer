@@ -1,0 +1,58 @@
+name: macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: DMG (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e 'if (process.arch !== process.env.EXPECTED_ARCH) process.exit(1)'
+      - run: npm ci
+      - run: npm run desktop:dmg
+      - name: Verify contents, Java/Kotlin, terminal and installed runtime
+        run: npm run desktop:dmg:smoke
+      - name: SHA-256 checksums
+        working-directory: release
+        run: |
+          for image in *.dmg; do
+            shasum -a 256 "$image" > "$image.sha256"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reviewer-darwin-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.dmg.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

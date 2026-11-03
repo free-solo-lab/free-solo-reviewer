@@ -1,16 +1,43 @@
 /** Tests the packaged backend in a disposable store, without model or GitHub requests. */
 import { createServer } from 'node:net';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
+import { parseArgs } from 'node:util';
+import WebSocket from 'ws';
 import { connectOrStartService } from './service-controller.js';
 import { command } from '../server/process.js';
+const { values } = parseArgs({ options: { app: { type: 'string' } } });
+const app = resolve(
+  values.app ?? `release/Reviewer-darwin-${process.arch}/Reviewer.app`,
+  'Contents/Resources/app',
+);
 const root = await mkdtemp(join(tmpdir(), 'reviewer-packaged-smoke-'));
-const app = resolve(`release/Reviewer-darwin-${process.arch}/Reviewer.app/Contents/Resources/app`);
 const node = join(app, 'runtime', 'node');
 let owned: Awaited<ReturnType<typeof connectOrStartService>> | undefined;
+let terminal: WebSocket | undefined;
 try {
+  const dependencies = join(app, 'runtime/node_modules');
+  for (const name of [
+    'react',
+    'react-dom',
+    'swagger-ui-react',
+    '@xterm/xterm',
+    '@fontsource/manrope',
+  ]) {
+    assert(!existsSync(join(dependencies, name)), `Unexpected UI dependency: ${name}`);
+  }
+  assert.deepEqual(await readdir(join(dependencies, 'node-pty/prebuilds')), [
+    `darwin-${process.arch}`,
+  ]);
+  assert.deepEqual(
+    (await readdir(join(dependencies, 'tree-sitter-wasms/out')))
+      .filter((name) => name.endsWith('.wasm'))
+      .sort(),
+    ['tree-sitter-java.wasm', 'tree-sitter-kotlin.wasm'],
+  );
   const socket = createServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
   const port = (socket.address() as { port: number }).port;
@@ -52,7 +79,8 @@ try {
   await mkdir(repo);
   await command('git', ['init', '-b', 'main'], { cwd: repo });
   await writeFile(join(repo, 'Demo.java'), 'class Demo { String run() { return "ok"; } }\n');
-  await command('git', ['add', 'Demo.java'], { cwd: repo });
+  await writeFile(join(repo, 'Example.kt'), 'class Example { fun kotlinRun(): String = "ok" }\n');
+  await command('git', ['add', 'Demo.java', 'Example.kt'], { cwd: repo });
   await command(
     'git',
     [
@@ -75,6 +103,37 @@ try {
     `/sessions/${review.id}/navigation-index?${new URLSearchParams({ snapshotId: review.snapshots[0].id, side: 'head' })}`,
   );
   assert(index.methods.some((method: { name: string }) => method.name === 'run'));
+  assert(index.methods.some((method: { name: string }) => method.name === 'kotlinRun'));
+  terminal = new WebSocket(
+    `${owned.url.replace('http:', 'ws:')}/api/sessions/${review.id}/terminal?repoId=${repository.id}`,
+    { origin: owned.url },
+  );
+  // Build the marker in the shell so its echoed input cannot be mistaken for successful output.
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Packaged terminal did not respond')), 15000);
+    let output = '';
+    terminal!.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    terminal!.on('open', () =>
+      terminal!.send(
+        JSON.stringify({
+          type: 'input',
+          data: "printf 'REVIEWER_%s\\n' 'PTY_OK'\r",
+        }),
+      ),
+    );
+    terminal!.on('message', (raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'data') output += message.data;
+      if (output.includes('REVIEWER_PTY_OK')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  });
+  terminal.close();
   const cli = await command(
     node,
     [join(app, 'runtime', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'), '--version'],
@@ -97,11 +156,15 @@ try {
       codex: cli.trim(),
       sqlite: true,
       sourceIndex: true,
+      kotlinIndex: true,
+      terminal: true,
+      runtimeContents: true,
       browserReuse: true,
       paidRequests: 0,
     }),
   );
 } finally {
+  terminal?.terminate();
   await owned?.close();
   await rm(root, { recursive: true, force: true });
 }

@@ -1700,4 +1700,5 @@ export const ru: Record<string, string> = {
   'New replies to your issues': 'Новые ответы на ваши обращения',
   'issue\u0004Open': 'Открыто',
   'issue\u0004Closed': 'Закрыто',
+  'Building Reviewer.dmg…': 'Собираем Reviewer.dmg…',
 };

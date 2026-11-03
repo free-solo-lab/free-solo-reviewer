@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/); the README explains [what each part of the version means](README.md#versions).
 
+## [0.1.3] — 2026-11-03
+
+macOS DMG distribution and smaller desktop packages. No changes to the data format or settings.
+
+### Added
+
+- `npm run desktop:dmg` creates a macOS disk image with Reviewer.app and an Applications shortcut for installation by dragging the app into Applications.
+- Manual and tag-triggered GitHub Actions builds for Apple Silicon and Intel, with verified DMG artifacts and SHA-256 checksums.
+- `npm run desktop:dmg:smoke` checks installation from an image; `desktop:smoke -- --app <path>` checks an explicit installed copy with isolated data and no model requests.
+
+### Changed
+
+- Desktop packages install only server dependencies from the existing lock file. The already-bundled React interface no longer brings a second copy of its npm dependencies into the app.
+- Desktop packages retain only the target macOS architecture of node-pty and the Java/Kotlin WASM grammars. Build output reports runtime, UI, application and DMG sizes.
+
+### Fixed
+
+- Repeated desktop builds replace the previous UI assets instead of accumulating obsolete bundles.
+
 ## [0.1.2] — 2026-11-03
 
 A patch release: fixes only, no new features and no changes to the data format. Update without preparation.
@@ -52,6 +71,7 @@ The first public alpha. Features, the data format and settings may still change.
 - Replies and reactions for every reviewer comment on the **Comments** page: line comments, conversation comments and review summaries.
 - Secret scanning and `shellcheck` in CI; issue and pull request templates.
 
+[0.1.3]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.0-alpha.1...v0.1.1
 [0.1.0-alpha.1]: https://github.com/free-solo-lab/free-solo-reviewer/releases/tag/v0.1.0-alpha.1
