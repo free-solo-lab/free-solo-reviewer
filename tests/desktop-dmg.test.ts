@@ -37,7 +37,14 @@ async function fixture() {
   await mkdir(outDir);
   const destination = join(outDir, 'Reviewer-0.1.1-darwin-arm64.dmg');
   await writeFile(destination, 'previous image');
-  return { appPath, outDir, destination, version: '0.1.1', arch: 'arm64' as const };
+  return {
+    appPath,
+    outDir,
+    destination,
+    version: '0.1.1',
+    arch: 'arm64' as const,
+    retryDelayMs: 0,
+  };
 }
 
 it('stages an installable bundle and publishes the completed image', async () => {
@@ -82,3 +89,26 @@ it.each(['copy', 'image'])(
     expect(await readdir(f.outDir)).toEqual(['Reviewer-0.1.1-darwin-arm64.dmg']);
   },
 );
+
+it('retries an image that hdiutil failed to create and publishes the next good one', async () => {
+  const f = await fixture();
+  let images = 0;
+  vi.mocked(command).mockImplementation(async (binary, args) => {
+    if (binary === '/usr/bin/ditto') {
+      await cp(args[0], args[1], { recursive: true, verbatimSymlinks: true });
+      return '';
+    }
+    images++;
+    if (images < 3) {
+      await writeFile(args.at(-1)!, 'partial image');
+      throw new Error('hdiutil: create failed');
+    }
+    await writeFile(args.at(-1)!, 'complete image');
+    return '';
+  });
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  expect(await createDiskImage(f)).toBe(f.destination);
+  expect(images).toBe(3);
+  expect(await readFile(f.destination, 'utf8')).toBe('complete image');
+  expect(await readdir(f.outDir)).toEqual(['Reviewer-0.1.1-darwin-arm64.dmg']);
+});

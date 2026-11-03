@@ -1,6 +1,9 @@
 import { mkdir, mkdtemp, rename, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { command } from '../server/process.js';
+
+const IMAGE_ATTEMPTS = 3;
 
 /** Publish only a complete image; a failed rebuild leaves the previous DMG intact. */
 export async function createDiskImage(options: {
@@ -8,6 +11,8 @@ export async function createDiskImage(options: {
   outDir: string;
   version: string;
   arch: 'arm64' | 'x64';
+  /** The pause before the first retry of `hdiutil create`; later ones wait longer. */
+  retryDelayMs?: number;
 }) {
   await mkdir(options.outDir, { recursive: true });
   const temporary = await mkdtemp(join(options.outDir, '.reviewer-dmg-'));
@@ -21,22 +26,34 @@ export async function createDiskImage(options: {
     });
     await symlink('/Applications', join(contents, 'Applications'));
     const image = join(temporary, filename);
-    await command(
-      '/usr/bin/hdiutil',
-      [
-        'create',
-        '-volname',
-        'Reviewer',
-        '-srcfolder',
-        contents,
-        '-fs',
-        'HFS+',
-        '-format',
-        'UDZO',
-        image,
-      ],
-      { timeout: 300000 },
-    );
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await rm(image, { force: true });
+        await command(
+          '/usr/bin/hdiutil',
+          [
+            'create',
+            '-volname',
+            'Reviewer',
+            '-srcfolder',
+            contents,
+            '-fs',
+            'HFS+',
+            '-format',
+            'UDZO',
+            image,
+          ],
+          { timeout: 300000 },
+        );
+        break;
+      } catch (error) {
+        // GitHub's macOS runners now and then fail `hdiutil create` without a message; it
+        // succeeds when run again.
+        if (attempt >= IMAGE_ATTEMPTS) throw error;
+        console.warn(`hdiutil create failed (attempt ${attempt} of ${IMAGE_ATTEMPTS}); retrying.`);
+        await delay((options.retryDelayMs ?? 5000) * attempt);
+      }
+    }
     await rename(image, destination);
     return destination;
   } finally {
