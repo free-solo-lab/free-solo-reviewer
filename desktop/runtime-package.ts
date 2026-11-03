@@ -24,7 +24,46 @@ interface PackageLock {
 const dynamicDependencies = ['node-pty', 'tree-sitter-wasms', '@openai/codex'];
 const grammarFiles = ['tree-sitter-java.wasm', 'tree-sitter-kotlin.wasm'];
 // Bump when expanding retained assets, so an already-pruned cache is reinstalled.
-const packagingRevision = 'runtime-1';
+const packagingRevision = 'runtime-2';
+
+type LockedPackage = PackageLock['packages'][string] & {
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+};
+
+/**
+ * The lock entries a runtime install reaches from its roots. `npm ci` installs every entry of a
+ * lock, so unreachable UI and build packages have to be left out of it, not only of the manifest.
+ */
+export function reachablePackages(lock: PackageLock, roots: string[]) {
+  const packages = lock.packages as Record<string, LockedPackage>;
+  // Node resolution: the closest node_modules folder up from the requiring package wins.
+  const locate = (from: string, name: string) => {
+    for (let base = from; ;) {
+      const path = `${base ? `${base}/` : ''}node_modules/${name}`;
+      if (packages[path]) return path;
+      if (!base) return undefined;
+      const parent = base.lastIndexOf('/node_modules/');
+      base = parent < 0 ? '' : base.slice(0, parent);
+    }
+  };
+  const kept = new Set<string>();
+  const visit = (path: string | undefined) => {
+    if (!path || kept.has(path)) return;
+    kept.add(path);
+    const entry = packages[path];
+    // Optional and peer packages are kept when locked; npm skips other platforms itself.
+    for (const name of Object.keys({
+      ...entry.dependencies,
+      ...entry.optionalDependencies,
+      ...entry.peerDependencies,
+    }))
+      visit(locate(path, name));
+  };
+  for (const name of roots) visit(locate('', name));
+  return Object.fromEntries(Object.entries(packages).filter(([path]) => kept.has(path)));
+}
 
 export function runtimePackage(metadata: PackageMetadata, lock: PackageLock, metafile: Metafile) {
   const imports = Object.values(metafile.outputs).flatMap((output) =>
@@ -52,11 +91,10 @@ export function runtimePackage(metadata: PackageMetadata, lock: PackageLock, met
     dependencies,
     overrides: metadata.overrides,
   };
-  // Keep every locked package/version/integrity; only the installation roots change.
+  // Reachable packages keep their locked version and integrity; only the roots change.
   const runtimeLock = {
     ...lock,
     packages: {
-      ...lock.packages,
       '': {
         name: manifest.name,
         version: manifest.version,
@@ -64,6 +102,7 @@ export function runtimePackage(metadata: PackageMetadata, lock: PackageLock, met
         engines: manifest.engines,
         dependencies,
       },
+      ...reachablePackages(lock, Object.keys(dependencies)),
     },
   };
   return { manifest: JSON.stringify(manifest), lock: JSON.stringify(runtimeLock) };

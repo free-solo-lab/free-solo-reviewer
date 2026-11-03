@@ -9,6 +9,7 @@ import {
   copyWebAssets,
   installRuntimeDependencies,
   pruneRuntimeAssets,
+  reachablePackages,
   runtimePackage,
 } from '../desktop/runtime-package';
 
@@ -60,7 +61,7 @@ async function nativeAssets(root: string) {
   await put(root, 'node_modules/tree-sitter-wasms/LICENSE');
 }
 
-it('projects the runtime roots without rewriting locked packages or changing the source lock', async () => {
+it('projects the runtime roots without rewriting kept packages or changing the source lock', async () => {
   const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
   const original = JSON.stringify(lock);
   const result = runtimePackage(metadata, lock, metafile);
@@ -81,10 +82,55 @@ it('projects the runtime roots without rewriting locked packages or changing the
   const projected = JSON.parse(result.lock);
   expect(projected.packages[''].dependencies).toEqual(manifest.dependencies);
   expect(projected.packages[''].devDependencies).toBeUndefined();
-  for (const [path, value] of Object.entries(lock.packages)) {
-    if (path) expect(projected.packages[path]).toEqual(value);
+  for (const [path, value] of Object.entries(projected.packages)) {
+    if (path) expect(value).toEqual(lock.packages[path]);
   }
   expect(JSON.stringify(lock)).toBe(original);
+});
+
+it('leaves UI and build packages out of the runtime lock, since npm ci installs every entry', async () => {
+  const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
+  const projected = JSON.parse(runtimePackage(metadata, lock, metafile).lock);
+  const paths = Object.keys(projected.packages);
+  for (const name of ['react', 'react-dom', 'swagger-ui-react', '@xterm/xterm', 'vite', 'esbuild'])
+    expect(paths, name).not.toContain(`node_modules/${name}`);
+  expect(paths.length).toBeLessThan(Object.keys(lock.packages).length / 2);
+  // Every dependency of a kept package resolves to a kept package, as Node resolves it.
+  for (const path of paths.filter(Boolean)) {
+    const entry = projected.packages[path];
+    for (const name of Object.keys(entry.dependencies ?? {})) {
+      const candidates = [];
+      for (let base = path; ;) {
+        candidates.push(`${base}/node_modules/${name}`);
+        const parent = base.lastIndexOf('/node_modules/');
+        if (parent < 0) break;
+        base = base.slice(0, parent);
+      }
+      candidates.push(`node_modules/${name}`);
+      expect(
+        candidates.some((candidate) => candidate in projected.packages),
+        `${path} → ${name}`,
+      ).toBe(true);
+    }
+  }
+});
+
+it('resolves nested copies of a package before the hoisted one', () => {
+  const lock = {
+    packages: {
+      '': {},
+      'node_modules/a': { version: '1', dependencies: { b: '2' } },
+      'node_modules/a/node_modules/b': { version: '2' },
+      'node_modules/b': { version: '1' },
+      'node_modules/c': { version: '1', optionalDependencies: { missing: '1' } },
+      'node_modules/unused': { version: '1' },
+    },
+  };
+  expect(Object.keys(reachablePackages(lock, ['a', 'c'])).sort()).toEqual([
+    'node_modules/a',
+    'node_modules/a/node_modules/b',
+    'node_modules/c',
+  ]);
 });
 
 it.each(['arm64', 'x64'])(
