@@ -9,13 +9,27 @@ export class AppError extends Error {
     super(message);
   }
 }
-export class CommandError extends AppError {
+export interface CommandDiagnostics {
+  exitCode?: number | string | null;
+  signal?: NodeJS.Signals | null;
+  killed?: boolean;
+  durationMs?: number;
+  timeoutMs?: number;
+}
+export class CommandError extends AppError implements CommandDiagnostics {
+  readonly exitCode?: number | string | null;
+  readonly signal?: NodeJS.Signals | null;
+  readonly killed?: boolean;
+  readonly durationMs?: number;
+  readonly timeoutMs?: number;
   constructor(
     message: string,
     public stdout: string,
     public stderr: string,
+    diagnostics: CommandDiagnostics = {},
   ) {
     super(message, 502);
+    Object.assign(this, diagnostics);
   }
 }
 export interface CommandOptions {
@@ -30,6 +44,8 @@ export async function command(
   args: string[],
   options: CommandOptions = {},
 ): Promise<string> {
+  const timeoutMs = options.timeout ?? 60_000;
+  const started = performance.now();
   return new Promise((resolve, reject) => {
     const child = execFile(
       binary,
@@ -37,7 +53,7 @@ export async function command(
       {
         cwd: options.cwd,
         signal: options.signal,
-        timeout: options.timeout ?? 60_000,
+        timeout: timeoutMs,
         maxBuffer: 32 * 1024 * 1024,
         encoding: 'utf8',
         env: options.env ?? process.env,
@@ -49,6 +65,13 @@ export async function command(
               `${binary}: ${(stderr || error.message).trim().slice(0, 1500)}`,
               stdout,
               stderr,
+              {
+                exitCode: error.code,
+                signal: error.signal,
+                killed: error.killed,
+                durationMs: Math.round(performance.now() - started),
+                timeoutMs,
+              },
             ),
           );
         else resolve(stdout);

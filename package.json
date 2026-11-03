@@ -1,6 +1,6 @@
 {
   "name": "free-solo-reviewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local reviewer for GitHub pull requests in Java/Kotlin Spring services: sequence diagrams, SQL, contracts and transactions linked to the exact source lines.",
   "license": "Apache-2.0",
   "author": "kostyastruga",
@@ -40,6 +40,7 @@
     "desktop:dmg": "npm run build && node --import tsx desktop/build.ts --dmg",
     "desktop:dmg:smoke": "node --import tsx desktop/smoke-dmg.ts",
     "desktop:smoke": "node --import tsx desktop/smoke-service.ts",
+    "desktop:gui:smoke": "node --import tsx desktop/smoke-gui.ts",
     "install:macos": "bash scripts/install-macos.sh"
   },
   "engines": {

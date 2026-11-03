@@ -7,6 +7,7 @@ import { serviceConfiguration } from '../server/runtime-paths.js';
 import { probeReviewer } from '../server/service-client.js';
 import { serviceUrl } from '../shared/runtime.js';
 import { t } from '../shared/i18n.js';
+import { stopChildProcess } from './shutdown.js';
 
 export function toolEnvironment(
   env: NodeJS.ProcessEnv,
@@ -35,6 +36,7 @@ export async function connectOrStartService(options: {
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  onUnexpectedExit?: (details: { exitCode: number | null; signal: NodeJS.Signals | null }) => void;
 }) {
   options.signal?.throwIfAborted();
   const env = toolEnvironment(options.env ?? process.env, options.node);
@@ -50,6 +52,10 @@ export async function connectOrStartService(options: {
   await mkdir(config.stateDir, { recursive: true, mode: 0o700 });
   const log = await open(join(config.stateDir, 'server.log'), 'a', 0o600);
   let child: ChildProcess;
+  let error: Error | undefined;
+  let exit: { exitCode: number | null; signal: NodeJS.Signals | null } | undefined;
+  let ownedReady = false;
+  let closing = false;
   try {
     child = spawn(options.node, [options.entry], {
       cwd: config.stateDir,
@@ -63,57 +69,64 @@ export async function connectOrStartService(options: {
       stdio: ['ignore', log.fd, log.fd],
       windowsHide: true,
     });
+    // Attach before awaiting log.close(): an executable may fail on the next tick.
+    child.on('error', (value) => {
+      error = value;
+    });
+    child.on('exit', (exitCode, signal) => {
+      exit = { exitCode, signal };
+      if (ownedReady && !closing && !options.signal?.aborted) options.onUnexpectedExit?.(exit);
+    });
   } finally {
     await log.close();
   }
-  let error: Error | undefined;
-  child.on('error', (value) => {
-    error = value;
-  });
-  let exit: number | null | undefined;
-  child.on('exit', (code) => {
-    exit = code;
-  });
+  let stopping: Promise<void> | undefined;
+  const closeChild = () => {
+    closing = true;
+    return (stopping ??= stopChildProcess(child));
+  };
   const until = Date.now() + (options.timeoutMs ?? 45000);
   try {
     while (Date.now() < until) {
       options.signal?.throwIfAborted();
       if (error) throw error;
       const ready = await probeReviewer(config.port);
+      if (exit && (!ready || ready.pid === child.pid))
+        throw new Error(
+          t(
+            'The Reviewer server exited ({0}). Details: {1}',
+            exit.signal ?? exit.exitCode,
+            join(config.stateDir, 'server.log'),
+          ),
+        );
       if (ready) {
         options.signal?.throwIfAborted();
         if (ready.dataDir !== config.dataDir)
           throw new Error(t('The server runs with another database.'));
         // If another launcher won the race, never stop its server on desktop exit.
         const owned = ready.pid === child.pid;
-        if (!owned && child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+        ownedReady = owned;
+        if (!owned) await closeChild();
         return {
           url: serviceUrl(config.port),
           owned,
-          close: async () => {
-            if (!owned || child.exitCode !== null || child.signalCode !== null) return;
-            await new Promise<void>((resolve) => {
-              child.once('exit', () => resolve());
-              child.kill('SIGTERM');
-            });
-          },
+          close: owned ? closeChild : async () => {},
         };
       }
-      if (exit !== undefined)
-        throw new Error(
-          t(
-            'The Reviewer server exited ({0}). Details: {1}',
-            exit,
-            join(config.stateDir, 'server.log'),
-          ),
-        );
       await delay(200);
     }
     throw new Error(
       t('The Reviewer server did not start. Details: {0}', join(config.stateDir, 'server.log')),
     );
   } catch (failure) {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    try {
+      await closeChild();
+    } catch (cleanupFailure) {
+      throw new AggregateError(
+        [failure, cleanupFailure],
+        t('Reviewer startup failed and its server could not be stopped.'),
+      );
+    }
     throw failure;
   }
 }

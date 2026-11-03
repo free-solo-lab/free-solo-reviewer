@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   Menu,
+  clipboard,
   dialog,
   ipcMain,
   net,
@@ -10,7 +11,7 @@ import {
 } from 'electron';
 import { spawn } from 'node:child_process';
 import { mkdirSync, openSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { connectOrStartService } from './service-controller.js';
 import { externalUrl, isInternalUrl } from './navigation.js';
 import { Updater } from './updater.js';
@@ -18,12 +19,95 @@ import { UPDATE_MANIFEST_URL } from './update-manifest.js';
 import { UPDATE_PUBLIC_KEY } from './update-public-key.js';
 import { command } from '../server/process.js';
 import { isLanguage, setLanguage, t } from '../shared/i18n.js';
+import { reviewerStateDir } from '../server/runtime-paths.js';
+import { waitForRendererReady } from './renderer-ready.js';
+import { createDesktopShutdown } from './shutdown.js';
+import {
+  createDesktopLog,
+  createFailureReporter,
+  desktopDiagnostic,
+  desktopFailureMessage,
+  openDesktopLogs,
+  type DesktopStage,
+} from './diagnostics.js';
 
 app.setName('Reviewer');
 let mainWindow: BrowserWindow | null = null;
 let service: Awaited<ReturnType<typeof connectOrStartService>> | undefined;
-let quitting = false;
+let serviceStarting: Promise<NonNullable<typeof service>> | undefined;
 const lifetime = new AbortController();
+const stateDir = reviewerStateDir();
+const log = createDesktopLog(stateDir);
+const appPath = app.isPackaged ? resolve(dirname(process.execPath), '..', '..') : app.getAppPath();
+const smokeStartup = app.isPackaged && process.argv.includes('--reviewer-smoke');
+let stage: DesktopStage = 'launch';
+const diagnostic = (phase: DesktopStage, error?: unknown) =>
+  desktopDiagnostic(
+    {
+      version: app.getVersion(),
+      osVersion: process.getSystemVersion(),
+      arch: process.arch,
+      appPath,
+      logPath: log.path,
+    },
+    phase,
+    error,
+  );
+const shutdown = createDesktopShutdown({
+  abort: () => lifetime.abort(),
+  getService: () =>
+    service ??
+    serviceStarting?.catch((error: unknown) => {
+      if (error !== lifetime.signal.reason) throw error;
+      return undefined;
+    }),
+  log: (error) => log.write(diagnostic('unhandled', error)),
+  quit: () => app.quit(),
+  exit: (code) => app.exit(code),
+});
+const showLogs = () =>
+  openDesktopLogs(stateDir, {
+    openPath: (path) => shell.openPath(path),
+    showErrorBox: (title, detail) => dialog.showErrorBox(title, detail),
+  });
+const report = createFailureReporter({
+  diagnostic,
+  log: (record) => log.write(record),
+  show: async (options) => (await dialog.showMessageBox(options)).response,
+  showLogs,
+  copy: (text) => clipboard.writeText(text),
+  close: () => void shutdown.stop(),
+});
+function fail(phase: DesktopStage, error: unknown) {
+  if (shutdown.stopping) return;
+  if (smokeStartup) {
+    const record = diagnostic(phase, error);
+    log.write(record);
+    console.error(JSON.stringify(record));
+    void shutdown.stop(1);
+    return;
+  }
+  if (!app.isReady()) {
+    const record = diagnostic(phase, error);
+    log.write(record);
+    try {
+      dialog.showErrorBox(
+        t('Could not open Reviewer'),
+        `${desktopFailureMessage(phase)}\n\n${JSON.stringify(record, null, 2)}`,
+      );
+    } finally {
+      void shutdown.stop(1);
+    }
+    return;
+  }
+  void report(phase, error).catch((failure) => {
+    log.write(diagnostic('unhandled', failure));
+    return shutdown.stop(1);
+  });
+}
+process.on('uncaughtException', (error) => fail('unhandled', error));
+process.on('unhandledRejection', (error) => fail('unhandled', error));
+log.write(diagnostic('launch'));
 const updateDir = join(app.getPath('userData'), 'updates');
 const updater = new Updater({
   currentVersion: app.getVersion(),
@@ -65,7 +149,7 @@ const updater = new Updater({
   onChange: (state) => mainWindow?.webContents.send('reviewer:update-changed', state),
 });
 async function showWindow() {
-  if (!service || quitting) return;
+  if (!service || shutdown.stopping) return;
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
@@ -91,9 +175,14 @@ async function showWindow() {
     },
   });
   mainWindow = win;
-  win.once('ready-to-show', () => win.show());
+  const ready = new Promise<void>((resolve) =>
+    win.once('ready-to-show', () => {
+      win.show();
+      resolve();
+    }),
+  );
   win.on('close', (event) => {
-    if (!quitting) {
+    if (!shutdown.stopping) {
       event.preventDefault();
       win.hide();
     }
@@ -105,6 +194,13 @@ async function showWindow() {
     const safe = externalUrl(url);
     if (safe) void shell.openExternal(safe).catch(() => {});
     return { action: 'deny' };
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    fail('renderer', Object.assign(new Error(details.reason), { exitCode: details.exitCode }));
+  });
+  win.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3)
+      fail('window', Object.assign(new Error(description), { exitCode: code }));
   });
   win.webContents.on('will-navigate', (event, url) => {
     if (isInternalUrl(url, service!.url)) return;
@@ -119,7 +215,15 @@ async function showWindow() {
         permission === 'clipboard-sanitized-write',
     ),
   );
-  await win.loadURL(service.url);
+  stage = 'window';
+  await Promise.all([win.loadURL(service.url), ready]);
+  if (smokeStartup) {
+    // Exercise Electron and React, in addition to the separate packaged backend check.
+    await win.webContents.executeJavaScript(`(${waitForRendererReady.toString()})()`);
+  }
+  stage = 'window-ready';
+  log.write(diagnostic(stage));
+  if (smokeStartup) app.quit();
 }
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -132,22 +236,28 @@ else {
   // Closing the window leaves analyses running; explicit Quit closes only an owned server.
   app.on('window-all-closed', () => {});
   app.on('before-quit', (event) => {
-    if (quitting) return;
-    quitting = true;
-    lifetime.abort();
-    if (!service?.owned) return;
+    if (shutdown.complete) return;
     event.preventDefault();
-    void service.close().finally(() => app.quit());
+    void shutdown.stop();
   });
   void app.whenReady().then(async () => {
     try {
       const root = app.getAppPath();
-      service = await connectOrStartService({
+      stage = 'server';
+      serviceStarting = connectOrStartService({
         node: join(root, 'runtime', 'node'),
         entry: join(root, 'runtime', 'server.mjs'),
         webDir: join(root, 'ui'),
         signal: lifetime.signal,
+        onUnexpectedExit: (details) =>
+          fail(
+            'server',
+            Object.assign(new Error(t('The Reviewer server stopped unexpectedly.')), details),
+          ),
       });
+      service = await serviceStarting;
+      if (shutdown.stopping) return;
+      if (smokeStartup && !service.owned) throw new Error('Smoke test must own an isolated server');
       // Menus follow the language chosen in the app's settings.
       const settings = await fetch(`${service.url}/api/settings/language`)
         .then((response) => response.json() as Promise<{ language?: unknown }>)
@@ -183,10 +293,12 @@ else {
         return updater.install();
       });
       // Checked shortly after start and every six hours; installing waits for the button.
-      void updater.cleanup().catch(() => {});
-      const check = () => void updater.check();
-      setTimeout(check, 15_000).unref();
-      setInterval(check, 6 * 60 * 60 * 1000).unref();
+      if (!smokeStartup) {
+        void updater.cleanup().catch(() => {});
+        const check = () => void updater.check();
+        setTimeout(check, 15_000).unref();
+        setInterval(check, 6 * 60 * 60 * 1000).unref();
+      }
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           {
@@ -205,6 +317,17 @@ else {
                   void shell.openExternal(service!.url);
                 },
               },
+              {
+                label: t('Show logs'),
+                click: () => {
+                  void showLogs();
+                },
+              },
+              {
+                label: t('Copy diagnostics'),
+                click: () => clipboard.writeText(JSON.stringify(diagnostic(stage), null, 2)),
+              },
+              { label: t('Show app in Finder'), click: () => shell.showItemInFolder(appPath) },
               { type: 'separator' },
               { role: 'hide' },
               { role: 'hideOthers' },
@@ -240,8 +363,7 @@ else {
       );
       await showWindow();
     } catch (error) {
-      if (!quitting) dialog.showErrorBox(t('Could not open Reviewer'), (error as Error).message);
-      app.quit();
+      fail(stage, error);
     }
   });
 }
