@@ -81,6 +81,7 @@ export const ru: Record<string, string> = {
   'Unpublished local changes': 'Локальные правки не опубликованы',
   'Review {0}': 'Ревью {0}',
   'You approved this version': 'Вы одобрили эту версию',
+  'Compare from {0}': 'Сравнить с «{0}»',
   'You requested changes on this version': 'Вы запросили изменения в этой версии',
   'You sent comments on this version': 'Вы отправили комментарии к этой версии',
   'The code changed after your approval': 'Код изменился после вашего апрува — нужно ревью заново',

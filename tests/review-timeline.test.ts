@@ -201,6 +201,11 @@ describe('review comparison timeline', () => {
     expect(html).toContain('origin/master');
     expect(html.indexOf('Анализ 1')).toBeLessThan(html.indexOf('type="range"'));
     expect(html.indexOf('<time')).toBeGreaterThan(html.indexOf('type="range"'));
+    // Every earlier point on the line is a click target; the current version is not.
+    expect(html.match(/title="Сравнить с «[^»]+»"/g)).toEqual([
+      'title="Сравнить с «origin/master»"',
+      'title="Сравнить с «Анализ 1»"',
+    ]);
   });
 });
 

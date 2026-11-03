@@ -58,6 +58,15 @@ export function ReviewTimeline({
     pending.current = next;
     setDraft(next);
   };
+  const track = useRef<HTMLDivElement>(null);
+  const nearest = (x: number) => {
+    const box = axis.current?.getBoundingClientRect();
+    return box?.width ? Math.round(((x - box.left) / box.width) * last) : selected;
+  };
+  const choose = (index: number) => {
+    preview(index);
+    void commit();
+  };
   const commit = async () => {
     const target = timelineSelection(points, from, pending.current);
     const value = points[target.index]?.id;
@@ -140,10 +149,7 @@ export function ReviewTimeline({
                   ]
                     .filter(Boolean)
                     .join('\n')}
-                  onClick={() => {
-                    preview(i);
-                    void commit();
-                  }}
+                  onClick={() => choose(i)}
                 >
                   {label(i)}
                 </button>
@@ -151,8 +157,16 @@ export function ReviewTimeline({
             </div>
           ))}
         </div>
-        <div className={styles.axis} ref={axis}>
-          <div className={styles.track} />
+        <div
+          className={styles.axis}
+          ref={axis}
+          onClick={(e) => {
+            // A click on the bare track picks the nearest earlier point.
+            if (e.target === e.currentTarget || e.target === track.current)
+              choose(nearest(e.clientX));
+          }}
+        >
+          <div className={styles.track} ref={track} />
           <button
             className={styles.interval}
             disabled={disabled}
@@ -173,9 +187,12 @@ export function ReviewTimeline({
                 preview(d.from + (e.clientX - d.x) / (width / last));
             }}
             onPointerUp={(e) => {
-              if (drag.current?.pointerId !== e.pointerId) return;
+              const d = drag.current;
+              if (d?.pointerId !== e.pointerId) return;
               drag.current = undefined;
               e.currentTarget.releasePointerCapture(e.pointerId);
+              // A click without dragging moves the start to the nearest point.
+              if (Math.abs(e.clientX - d.x) < 4) preview(nearest(e.clientX));
               void commit();
             }}
             onPointerCancel={() => {
@@ -198,14 +215,32 @@ export function ReviewTimeline({
           >
             <span />
           </button>
-          <div className={styles.stops} aria-hidden="true">
-            {points.map((p, i) => (
-              <span
-                key={p.id}
-                style={{ left: `${(i / last) * 100}%` }}
-                data-selected={i >= position}
-              />
-            ))}
+          {/* Any earlier point can be clicked to start the comparison there. */}
+          <div className={styles.stops}>
+            {points.map((p, i) =>
+              i < last ? (
+                <button
+                  key={p.id}
+                  type="button"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  disabled={disabled}
+                  style={{ left: `${(i / last) * 100}%` }}
+                  data-selected={i >= position}
+                  title={[t('Compare from {0}', label(i)), marks[i]?.hint]
+                    .filter(Boolean)
+                    .join('\n')}
+                  onClick={() => choose(i)}
+                />
+              ) : (
+                <span
+                  key={p.id}
+                  aria-hidden="true"
+                  style={{ left: `${(i / last) * 100}%` }}
+                  data-selected
+                />
+              ),
+            )}
           </div>
           <input
             className={styles.handle}

@@ -53,6 +53,7 @@
   position: relative;
   margin: 1px calc(50% / var(--points)) 0;
   height: 18px;
+  cursor: pointer;
 }
 .track {
   position: absolute;
@@ -91,19 +92,54 @@ button.interval:active {
 .stops {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
 }
-.stops span {
+.stops > * {
   position: absolute;
-  width: 4px;
-  height: 4px;
   top: 50%;
   transform: translate(-50%, -50%);
+}
+.stops span,
+.stops button::before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--muted);
 }
-.stops [data-selected='true'] {
+.stops span[data-selected='true'],
+.stops button[data-selected='true']::before {
   background: var(--text);
+}
+/* A wide hit area around the small dot. */
+.stops button {
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.stops button:active {
+  transform: translate(-50%, -50%);
+}
+.stops button:hover {
+  background: none;
+}
+.stops button:hover:not(:disabled)::before {
+  width: 8px;
+  height: 8px;
+  background: var(--text);
+}
+.stops button:disabled {
+  cursor: default;
 }
 input.handle {
   appearance: none;
@@ -246,6 +282,10 @@ input.handle {
   }
   .track {
     top: 21px;
+  }
+  .stops button {
+    width: 32px;
+    height: 44px;
   }
   .current,
   .decision {
