@@ -1,12 +1,19 @@
 import { build } from 'esbuild';
 import { packager } from '@electron/packager';
 import { createHash } from 'node:crypto';
-import { access, chmod, copyFile, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { command } from '../server/process.js';
 import { t } from '../shared/i18n.js';
+import { createDiskImage } from './dmg.js';
+import {
+  copyWebAssets,
+  installRuntimeDependencies,
+  reportArtifactSize,
+  runtimePackage,
+} from './runtime-package.js';
 const require = createRequire(import.meta.url);
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const target = join(root, '.desktop', 'app');
@@ -80,7 +87,7 @@ export async function buildDesktop() {
     }),
   );
   await copyFile(join(root, 'LICENSE'), join(target, 'LICENSE'));
-  await Promise.all([
+  const [, , server] = await Promise.all([
     build({
       entryPoints: [join(root, 'desktop/main.ts')],
       outfile: join(target, 'main.cjs'),
@@ -106,40 +113,15 @@ export async function buildDesktop() {
       format: 'esm',
       packages: 'external',
       target: 'node24',
+      metafile: true,
     }),
   ]);
-  await cp(join(root, 'dist'), join(target, 'ui'), { recursive: true });
-  const fingerprint = createHash('sha256').update(packageLock).update(process.arch).digest('hex');
-  const installStamp = join(runtime, '.dependencies');
-  if (!(await exists(installStamp)) || (await readFile(installStamp, 'utf8')) !== fingerprint) {
-    await copyFile(join(root, 'package.json'), join(runtime, 'package.json'));
-    await writeFile(join(runtime, 'package-lock.json'), packageLock);
-    console.log(t('Installing the local server dependencies…'));
-    await command(
-      process.env.npm_execpath ? process.execPath : 'npm',
-      process.env.npm_execpath
-        ? [
-            process.env.npm_execpath,
-            'ci',
-            '--omit=dev',
-            '--ignore-scripts',
-            '--no-audit',
-            '--no-fund',
-          ]
-        : ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
-      { cwd: runtime, timeout: 300000 },
-    );
-    await writeFile(installStamp, fingerprint);
-  }
-  // npm runs no install scripts here, and node-pty's prebuilt helper comes without the
-  // execute bit; the terminal cannot start a shell without it.
-  const helper = join(
+  await copyWebAssets(join(root, 'dist'), join(target, 'ui'));
+  await installRuntimeDependencies(
     runtime,
-    'node_modules/node-pty/prebuilds',
-    `${process.platform}-${process.arch}`,
-    'spawn-helper',
+    runtimePackage(metadata, JSON.parse(packageLock), server.metafile!),
+    process.arch,
   );
-  if (await exists(helper)) await chmod(helper, 0o755);
   await writeFile(
     join(target, 'versions.json'),
     JSON.stringify(
@@ -152,11 +134,13 @@ export async function buildDesktop() {
       2,
     ),
   );
+  await reportArtifactSize(runtime);
+  await reportArtifactSize(join(target, 'ui'));
   return target;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const source = await buildDesktop();
-  if (process.argv.includes('--package')) {
+  if (process.argv.includes('--package') || process.argv.includes('--dmg')) {
     console.log(t('Building Reviewer.app…'));
     const paths = await packager({
       dir: source,
@@ -175,5 +159,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       darwinDarkModeSupport: true,
     });
     console.log(paths.map((path) => `${path}/Reviewer.app`).join('\n'));
+    for (const path of paths) await reportArtifactSize(join(path, 'Reviewer.app'));
+    if (process.argv.includes('--dmg')) {
+      console.log(t('Building Reviewer.dmg…'));
+      for (const path of paths) {
+        const image = await createDiskImage({
+          appPath: join(path, 'Reviewer.app'),
+          outDir: join(root, 'release'),
+          version: metadata.version,
+          arch: process.arch === 'arm64' ? 'arm64' : 'x64',
+        });
+        await reportArtifactSize(image);
+      }
+    }
   } else console.log(source);
 }

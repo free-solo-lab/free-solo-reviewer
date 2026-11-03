@@ -41,6 +41,18 @@ See [docs/FEATURES.md](docs/FEATURES.md) for a detailed tour and the HTTP API.
 
 ## Install on macOS
 
+### From a DMG
+
+Download the artifact for your Mac from a successful [macOS DMG workflow run](https://github.com/free-solo-lab/free-solo-reviewer/actions/workflows/macos-dmg.yml): **Reviewer-darwin-arm64** for Apple Silicon, or **Reviewer-darwin-x64** for Intel. Unzip the artifact to get `Reviewer-<version>-darwin-<arch>.dmg` and its `.sha256` checksum file. From that folder, verify the download with `shasum -a 256 -c Reviewer-<version>-darwin-<arch>.dmg.sha256`, substituting the actual filename.
+
+Open the DMG, drag **Reviewer.app** onto **Applications**, eject the image and open Reviewer from Applications, Spotlight or the Dock. To update, quit Reviewer and replace the app the same way; your review history and sign-ins stay in their existing folders. Workflow artifacts are kept for 30 days; a maintainer can build them again with **Run workflow**. Builds also run on `v*` tags; they do not publish a GitHub Release.
+
+The app includes Node.js and Codex CLI. Git and the [GitHub CLI](https://cli.github.com/) are still required separately (`brew install git gh` if you use Homebrew). To install these tools automatically along with Reviewer, use the source installer below.
+
+These builds have no Apple Developer ID signature or notarization. If macOS blocks the first launch, try opening Reviewer, then go to **System Settings → Privacy & Security → Open Anyway** and confirm. See [Apple's instructions](https://support.apple.com/en-gb/102445). If your Mac does not allow an exception, use the source installer.
+
+### Build and install automatically
+
 Open **Terminal** (Spotlight → “Terminal”), paste one line and press Return:
 
 ```sh
@@ -95,8 +107,9 @@ Open **http://127.0.0.1:4318** and connect GitHub and Codex as above. Terminal s
 
 - **Run in a window:** `npm run desktop`.
 - **Build `Reviewer.app`:** `npm run desktop:package`. The app lands in `release/Reviewer-darwin-arm64/` (Apple Silicon) or `release/Reviewer-darwin-x64/` (Intel) and bundles its own Node.js.
+- **Build a DMG:** `npm run desktop:dmg`. The image lands in `release/Reviewer-<version>-darwin-<arch>.dmg`, with Reviewer.app and a shortcut to Applications. Build on a Mac of the target architecture. `npm run desktop:dmg:smoke` verifies the image and tests an installed copy without changing your Applications folder or review data.
 
-The browser and the desktop app share one server and one review history. Closing the window keeps analyses running; **Open in browser** in the app menu opens the same server. See [desktop/README.md](desktop/README.md) for how the server is shared and where data lives.
+The browser and the desktop app share one server and one review history. Closing the window keeps analyses running; **Open in browser** in the app menu opens the same server. Desktop builds include only server npm dependencies, the target architecture's terminal binaries and the Java/Kotlin parsers. See [desktop/README.md](desktop/README.md) for package sizes, how the server is shared and where data lives.
 
 ## Using Reviewer
 
@@ -155,7 +168,7 @@ In development, Vite proxies `/api` to port 4318; change the proxy in `vite.conf
 - **“GitHub is not connected” at the bottom left** — press **Sign in to GitHub** in the banner or **Add account…** in the user menu.
 - **“GitHub CLI is not installed”** — run `brew install gh`, or the installer again.
 - **“Codex is not connected”** — press **Connect Codex** in the banner or in the user menu.
-- **The app does not open: “Reviewer is damaged” or “cannot be verified”** — happens only with a copy of `Reviewer.app` downloaded from elsewhere, which is not notarized. Build it with the installer instead.
+- **The downloaded app does not open or “cannot be verified”** — the DMG builds are not notarized. Follow the first-launch instructions in [From a DMG](#from-a-dmg). If macOS reports damage or does not allow an exception, verify the checksum and use the source installer.
 - **Port 4318 is busy** — the demo and the regular server use the same port; run one at a time or set `REVIEW_PORT`.
 - **`ExperimentalWarning: SQLite`** in the console is expected: `node:sqlite` is still marked experimental.
 
