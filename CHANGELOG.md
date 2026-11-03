@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/); the README explains [what each part of the version means](README.md#versions).
 
-## [Unreleased]
+## [0.2.0] — 2026-11-03
+
+A minor release: the app updates itself from now on, and the review shows your decisions on the timeline. No changes to the data format; install this version by hand once, later ones arrive by themselves.
 
 ### Added
 
@@ -89,6 +91,7 @@ The first public alpha. Features, the data format and settings may still change.
 - Replies and reactions for every reviewer comment on the **Comments** page: line comments, conversation comments and review summaries.
 - Secret scanning and `shellcheck` in CI; issue and pull request templates.
 
+[0.2.0]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.0-alpha.1...v0.1.1
