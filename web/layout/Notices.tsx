@@ -1,4 +1,3 @@
-import { Markdown } from '../Markdown';
 import { IconButton } from '../icons';
 import { Gaps } from '../components';
 import { useState } from 'react';
@@ -21,7 +20,6 @@ export function Notices() {
     notice,
     setSetup,
     fileViews,
-    openSource,
   } = useWorkspace();
   const queryClient = useQueryClient();
   const [connecting, setConnecting] = useState<'github' | 'codex' | null>(null);
@@ -47,32 +45,6 @@ export function Notices() {
         </select>
         <button onClick={() => setSetup(true)}>{t('＋ New')}</button>
       </div>
-      {status?.demo && (
-        <div className="alert notice">
-          {t(
-            'Demo mode. Analysis data is prepared in advance; sending a review is simulated and does not contact GitHub.',
-          )}
-        </div>
-      )}
-      {missing && missing.some(Boolean) && (
-        <div className="alert notice" role="status">
-          <span>
-            {missing[0] && missing[1]
-              ? t('Connect GitHub and Codex to review pull requests.')
-              : missing[0]
-                ? t('Connect GitHub to load pull requests and publish reviews.')
-                : t('Connect Codex to run the analysis.')}
-          </span>
-          {missing[0] && (
-            <button onClick={() => setConnecting('github')}>{t('Sign in to GitHub')}</button>
-          )}
-          {missing[1] && (
-            <button className="primary" onClick={() => setConnecting('codex')}>
-              {t('Connect Codex')}
-            </button>
-          )}
-        </div>
-      )}
       {connecting === 'codex' && <CodexLoginDialog onClose={() => setConnecting(null)} />}
       {connecting === 'github' && (
         <GitHubLoginDialog
@@ -83,49 +55,57 @@ export function Notices() {
           }}
         />
       )}
-      {error && (
-        <div className="alert error" role="alert">
-          <span>{error}</span>
-          <IconButton
-            icon="close"
-            label={t('Hide error')}
-            tooltip={false}
-            onClick={() => setError('')}
-          />
-        </div>
-      )}
-      {fileViews.error && (
-        <div className="alert error" role="alert">
-          <span>{fileViews.error}</span>
-          <button onClick={() => void fileViews.reload()}>{t('Retry')}</button>
-        </div>
-      )}
-      {notice && (
-        <div className="alert notice" role="status">
-          {notice}
-        </div>
-      )}
-      {!!sessionData?.run?.result.pendingDescriptions?.length && (
-        <details className="alert notice">
-          <summary>{t('Descriptions awaiting an update')}</summary>
-          <ul>
-            {sessionData.run.result.pendingDescriptions.map((p) => (
-              <li key={`${p.section}:${p.id}`}>
-                <details>
-                  <summary>{p.title}</summary>
-                  {p.summary && <Markdown>{p.summary}</Markdown>}
-                  <button
-                    className="text-button"
-                    onClick={() => p.evidence[0] && void openSource(p.evidence[0], p.revisionId)}
-                  >
-                    {t('Previous source')}
-                  </button>
-                </details>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      {/* One stack, so a notice never covers an error shown at the same corner. */}
+      <div className="alerts">
+        {status?.demo && (
+          <div className="alert notice">
+            {t(
+              'Demo mode. Analysis data is prepared in advance; sending a review is simulated and does not contact GitHub.',
+            )}
+          </div>
+        )}
+        {missing && missing.some(Boolean) && (
+          <div className="alert notice" role="status">
+            <span>
+              {missing[0] && missing[1]
+                ? t('Connect GitHub and Codex to review pull requests.')
+                : missing[0]
+                  ? t('Connect GitHub to load pull requests and publish reviews.')
+                  : t('Connect Codex to run the analysis.')}
+            </span>
+            {missing[0] && (
+              <button onClick={() => setConnecting('github')}>{t('Sign in to GitHub')}</button>
+            )}
+            {missing[1] && (
+              <button className="primary" onClick={() => setConnecting('codex')}>
+                {t('Connect Codex')}
+              </button>
+            )}
+          </div>
+        )}
+        {error && (
+          <div className="alert error" role="alert">
+            <span>{error}</span>
+            <IconButton
+              icon="close"
+              label={t('Hide error')}
+              tooltip={false}
+              onClick={() => setError('')}
+            />
+          </div>
+        )}
+        {fileViews.error && (
+          <div className="alert error" role="alert">
+            <span>{fileViews.error}</span>
+            <button onClick={() => void fileViews.reload()}>{t('Retry')}</button>
+          </div>
+        )}
+        {notice && (
+          <div className="alert notice" role="status">
+            {notice}
+          </div>
+        )}
+      </div>
       {!!sessionData?.refreshWarnings?.length && <Gaps gaps={sessionData.refreshWarnings} />}
     </>
   );

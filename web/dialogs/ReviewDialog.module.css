@@ -398,6 +398,12 @@
 .summaryDetails[open] summary {
   margin-bottom: 8px;
 }
+.sendHint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
 .footerCount {
   margin-right: auto;
   color: var(--muted);

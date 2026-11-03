@@ -46,8 +46,6 @@ export const ru: Record<string, string> = {
   'Changes requested on GitHub': 'На GitHub запрошены исправления',
   'Approved on GitHub': 'Одобрено на GitHub',
   'New commits on GitHub': 'Новые коммиты на GitHub',
-  'Previous source': 'Прежний код',
-  'Descriptions awaiting an update': 'Описания ожидают дополнения',
   'Outdated location · original source': 'Устаревшая привязка · исходный код',
   'Wait until the current work finishes.': 'Дождитесь завершения текущей операции.',
   'The published code differs from the reviewed version.':
@@ -1393,6 +1391,8 @@ export const ru: Record<string, string> = {
   'Invalid comment lines.': 'Недопустимые строки комментария.',
   '{0}\n\nContext: {1}/{2}:{3} ({4})': '{0}\n\nКонтекст: {1}/{2}:{3} ({4})',
   'Add text or comments to the review.': 'Добавьте текст или комментарии к ревью.',
+  'Add a comment or choose Approve to send the review.':
+    'Чтобы отправить ревью, добавьте комментарий или выберите «Одобрить».',
   'The overall review text exceeds 60,000 characters. Shorten the comments.':
     'Общий текст ревью превышает 60 000 символов. Сократите комментарии.',
   'GitHub rejected the review: {0}. The draft is available for fixing.':

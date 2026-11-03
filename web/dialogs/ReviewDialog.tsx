@@ -108,6 +108,12 @@ export function ReviewDialog() {
     (comment) => !comment.forCodex || !completionFor(comment.id),
   );
   const included = reviewComments.filter((comment) => comment.selected).length;
+  // GitHub takes a review without text or comments only as an approval.
+  const nothingToSend =
+    !currentSnapshot.local &&
+    currentDraft.action !== 'APPROVE' &&
+    !currentDraft.body.trim() &&
+    !included;
   const historyCount = done.length + (currentDraft.published?.length ?? 0);
   const codexSteps = activeComments.filter((comment) => comment.forCodex);
   const listed = view === 'codex' ? codexSteps : activeComments;
@@ -426,6 +432,11 @@ export function ReviewDialog() {
                     placeholder={t('Optional…')}
                   />
                 </details>
+                {nothingToSend && (
+                  <p className={styles.sendHint} role="status">
+                    {t('Add a comment or choose Approve to send the review.')}
+                  </p>
+                )}
                 <div className={`draft-footer ${styles.footer}`}>
                   <span className={styles.footerCount}>
                     {t('In the review')} · {included}
@@ -465,7 +476,7 @@ export function ReviewDialog() {
                   )}
                   <button
                     className="primary"
-                    disabled={!!busy}
+                    disabled={!!busy || nothingToSend}
                     onClick={() =>
                       void task(t('Preparing the review'), async () => {
                         const saved = await saveDrafts();
