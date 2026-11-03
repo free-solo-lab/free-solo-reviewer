@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { emptyModelResult, type ReviewSession, type Snapshot } from '../shared/model';
 import { sessionListItem } from '../shared/session-list';
-import { recordReviewCheckpoint } from '../shared/review-workflow';
+import { ensureReviewWorkflow, recordReviewCheckpoint } from '../shared/review-workflow';
 import { ReviewListItem } from '../web/layout/ReviewListItem';
 import { TooltipProvider } from '../web/ui/Tooltip';
 
@@ -88,6 +88,60 @@ describe('review list states', () => {
     expect(sessionListItem(s).reviewState).toBe('ready');
     sent(s, 'github', 'another');
     expect(sessionListItem(s).reviewState).toBe('sent');
+  });
+  it('shows your approval until the approved code changes, then asks to review again', () => {
+    const s = analyzed(session());
+    recordReviewCheckpoint(
+      s,
+      'repo',
+      'approve',
+      'github',
+      [],
+      '2026-11-01T12:00:00Z',
+      1,
+      'APPROVE',
+    );
+    recordReviewCheckpoint(s, 'repo', 'note', 'github', [], '2026-11-01T13:00:00Z', 2, 'COMMENT');
+    expect(sessionListItem(s).reviewState).toBe('approved');
+    s.snapshots = [{ ...s.snapshots[0], id: 'source-2', contentHash: 'changed-code' }];
+    expect(sessionListItem(s).reviewState).toBe('review-again');
+    recordReviewCheckpoint(s, 'repo', 'again', 'github', [], '2026-11-02T12:00:00Z', 3, 'APPROVE');
+    expect(sessionListItem(s).reviewState).toBe('approved');
+  });
+  it('restores the decision of reviews sent before decisions were recorded', () => {
+    const s = analyzed(session());
+    sent(s);
+    const submission = { id: 7, url: 'u', at: '2026-11-01T12:00:00Z' };
+    s.workflow!.checkpoints[0] = {
+      ...s.workflow!.checkpoints[0],
+      key: 'github:repo:7',
+      submissionId: 7,
+    };
+    ensureReviewWorkflow(s, [
+      {
+        sessionId: s.id,
+        snapshotId: 'source-1',
+        headSha: 'sha-1',
+        body: '',
+        action: 'COMMENT',
+        comments: [],
+        state: 'draft',
+        attempt: null,
+        submission: null,
+        published: [
+          {
+            snapshotId: 'source-1',
+            headSha: 'sha-1',
+            body: '',
+            action: 'APPROVE',
+            comments: [],
+            submission,
+          },
+        ],
+      },
+    ]);
+    expect(s.workflow!.checkpoints).toHaveLength(1);
+    expect(sessionListItem(s).reviewState).toBe('approved');
   });
   it('keeps running, partial, failed and stopped states distinct', () => {
     for (const state of ['running', 'partial', 'failed', 'cancelled'] as const) {

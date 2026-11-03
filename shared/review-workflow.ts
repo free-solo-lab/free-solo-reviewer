@@ -1,4 +1,4 @@
-import type { ReviewDraft, ReviewSession, Snapshot } from './model.js';
+import type { ReviewAction, ReviewDraft, ReviewSession, Snapshot } from './model.js';
 
 export interface ReviewCheckpoint {
   id: string;
@@ -10,6 +10,8 @@ export interface ReviewCheckpoint {
   analysisId?: string;
   commentIds: string[];
   submissionId?: number;
+  /** The decision sent to GitHub with this review. */
+  action?: ReviewAction;
 }
 export interface RemoteReviewState {
   repoId: string;
@@ -68,7 +70,12 @@ export function ensureReviewWorkflow(session: ReviewSession, drafts: ReviewDraft
       const snapshot = old.find((s) => s.id === sent.snapshotId);
       if (!snapshot) continue;
       const key = `github:${snapshot.repoId}:${sent.submission.id}`;
-      if (workflow.checkpoints.some((c) => c.key === key)) continue;
+      const existing = workflow.checkpoints.find((c) => c.key === key);
+      if (existing) {
+        // Reviews sent before decisions were recorded get theirs from the sent draft.
+        existing.action ??= sent.action;
+        continue;
+      }
       const revision = session.history?.find((r) => r.snapshots.some((s) => s.id === snapshot.id));
       workflow.checkpoints.push({
         id: `checkpoint:${key}`,
@@ -80,6 +87,7 @@ export function ensureReviewWorkflow(session: ReviewSession, drafts: ReviewDraft
         analysisId: revision?.run.id ?? session.run?.id,
         commentIds: sent.comments.filter((c) => c.selected && !c.forCodex).map((c) => c.id),
         submissionId: sent.submission.id,
+        action: sent.action,
       });
       for (const s of revision?.snapshots ?? session.snapshots)
         if (!workflow.versions.some((v) => v.id === s.id)) workflow.versions.push(s);
@@ -96,6 +104,7 @@ export function recordReviewCheckpoint(
   commentIds: string[],
   at = new Date().toISOString(),
   submissionId?: number,
+  action?: ReviewAction,
 ) {
   const workflow = ensureReviewWorkflow(session);
   const existing = workflow.checkpoints.find((c) => c.key === key);
@@ -112,9 +121,18 @@ export function recordReviewCheckpoint(
     analysisId: session.run?.id,
     commentIds,
     submissionId,
+    ...(action && { action }),
   };
   workflow.checkpoints.push(checkpoint);
   return checkpoint;
+}
+
+/** The standing decision: a later comment keeps an approval, as on GitHub. */
+export function reviewDecision(checkpoints: ReviewCheckpoint[]) {
+  return [...checkpoints]
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .findLast((c) => c.action && c.action !== 'COMMENT')?.action as
+    Exclude<ReviewAction, 'COMMENT'> | undefined;
 }
 
 export function checkpointSnapshots(session: ReviewSession, checkpoint: ReviewCheckpoint) {

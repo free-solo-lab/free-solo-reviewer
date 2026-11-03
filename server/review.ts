@@ -50,6 +50,7 @@ export class ReviewManager {
       draft.comments.filter((c) => c.selected && !c.forCodex).map((c) => c.id),
       draft.submission.at,
       draft.submission.id,
+      draft.action,
     );
     this.store.saveSession(current);
   }

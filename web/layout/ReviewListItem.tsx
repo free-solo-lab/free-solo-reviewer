@@ -9,6 +9,12 @@ const states: Record<SessionReviewState, { icon: IconName; label: string; tone: 
   new: { icon: 'circleDashed', label: t('Not analyzed'), tone: 'neutral' },
   ready: { icon: 'circleCheck', label: t('Analysis ready'), tone: 'analyzed' },
   sent: { icon: 'send', label: t('Review sent'), tone: 'sent' },
+  approved: { icon: 'check', label: t('You approved the current version'), tone: 'approved' },
+  'review-again': {
+    icon: 'refresh',
+    label: t('The code changed after your approval'),
+    tone: 'attention',
+  },
   'local-sent': { icon: 'send', label: t('Sent to Codex'), tone: 'sent' },
   running: { icon: 'refresh', label: t('Analyzing'), tone: 'running' },
   partial: { icon: 'alert', label: t('Partial analysis'), tone: 'attention' },

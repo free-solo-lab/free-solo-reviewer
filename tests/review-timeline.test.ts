@@ -106,6 +106,53 @@ describe('review comparison timeline', () => {
     expect(updated.points.map((p) => p.id)).toEqual(['base', 'review-1', 'current']);
     expect(updated.from.id).toBe('review-1');
   });
+  it('marks your approval on the reviewed code and asks to review again after it changes', () => {
+    const session = makeSession();
+    const review = (id: string, at: string, action: 'APPROVE' | 'COMMENT') => ({
+      id,
+      key: id,
+      at,
+      kind: 'github' as const,
+      repoId: 'repo',
+      snapshotIds: ['latest'],
+      commentIds: [],
+      action,
+    });
+    session.workflow = {
+      version: 1,
+      initial: { at: session.createdAt, snapshots: [snapshot('initial')] },
+      versions: [],
+      // A comment after the approval keeps it, as on GitHub.
+      checkpoints: [
+        review('approve', '2026-11-03T10:00:00Z', 'APPROVE'),
+        review('comment', '2026-11-03T11:00:00Z', 'COMMENT'),
+      ],
+    };
+    const render = () => {
+      const selected = selectedReviewRange(session);
+      return renderToStaticMarkup(
+        React.createElement(ReviewTimeline, {
+          points: selected.points,
+          from: selected.from.id,
+          onChange: async () => {},
+        }),
+      );
+    };
+    expect(reviewPoints(session).at(-1)?.decision).toBe('APPROVE');
+    expect(render()).toContain('Одобрено');
+    expect(render()).not.toContain('Нужно ревью заново');
+
+    session.workflow.versions = [snapshot('latest')];
+    session.snapshots = [snapshot('newer')];
+    const points = reviewPoints(session);
+    expect(points.map((p) => [p.id, p.decision])).toEqual([
+      ['base', undefined],
+      ['comment', 'APPROVE'],
+      ['current', undefined],
+    ]);
+    expect(render()).toContain('Одобрено');
+    expect(render()).toContain('Нужно ревью заново');
+  });
   it('renders one movable boundary with names above the track and dates below, with no version dropdown', () => {
     const selected = selectedReviewRange(makeSession([revision('first')]));
     const html = renderToStaticMarkup(

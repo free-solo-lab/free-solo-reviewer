@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ReviewPoint } from '../../shared/review-timeline';
 import { getLanguage, t } from '../../shared/i18n';
+import { Icon } from '../icons';
 import styles from './ReviewTimeline.module.css';
 
 export function timelineSelection(
@@ -82,6 +83,27 @@ export function ReviewTimeline({
         : points[i]?.kind === 'review'
           ? t('Review {0}', i)
           : t('Analysis {0}', i);
+  // An approval of older code no longer covers what is reviewed now.
+  const stale =
+    points[last]?.decision !== 'APPROVE' &&
+    points.slice(0, last).findLast((p) => p.decision)?.decision === 'APPROVE';
+  const mark = (p: ReviewPoint, i: number) =>
+    p.decision === 'APPROVE'
+      ? { tone: 'approved', text: t('Approved'), hint: t('You approved this version') }
+      : p.decision === 'REQUEST_CHANGES'
+        ? {
+            tone: 'changes',
+            text: t('Changes requested'),
+            hint: t('You requested changes on this version'),
+          }
+        : i === last && stale
+          ? {
+              tone: 'stale',
+              text: t('Review again'),
+              hint: t('The code changed after your approval'),
+            }
+          : undefined;
+  const marks = points.map(mark);
   if (last < 1) return null;
   return (
     <div className={styles.scroll} aria-label={t('Comparison with the current version')}>
@@ -170,6 +192,7 @@ export function ReviewTimeline({
                 key={p.id}
                 style={{ left: `${(i / last) * 100}%` }}
                 data-selected={i >= position}
+                data-tone={marks[i]?.tone}
               />
             ))}
           </div>
@@ -219,6 +242,20 @@ export function ReviewTimeline({
             </time>
           ))}
         </div>
+        {marks.some(Boolean) && (
+          <div className={styles.marks}>
+            {marks.map((m, i) => (
+              <span key={points[i].id} data-tone={m?.tone} title={m?.hint}>
+                {m && (
+                  <>
+                    {m.tone === 'approved' && <Icon name="check" size={11} />}
+                    {m.text}
+                  </>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         <span className={styles.sr} aria-live="polite">
           {t('Comparison: {0} → {1}', label(position), label(last))}
         </span>

@@ -204,6 +204,9 @@
 .sessionState.sent {
   color: #8164b0;
 }
+.sessionState.approved {
+  color: #2f8a57;
+}
 .sessionState.attention {
   color: var(--orange);
 }

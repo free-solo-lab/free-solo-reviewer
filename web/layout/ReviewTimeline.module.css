@@ -202,6 +202,40 @@ input.handle {
   font-size: 11px;
   line-height: 15px;
 }
+.marks {
+  display: grid;
+  grid-template-columns: repeat(var(--points), minmax(0, 1fr));
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 600;
+}
+.marks span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.marks [data-tone='approved'] {
+  color: #2f8a57;
+}
+.marks [data-tone='changes'],
+.marks [data-tone='stale'] {
+  color: var(--orange);
+}
+.stops span[data-tone='approved'] {
+  width: 6px;
+  height: 6px;
+  background: #2f8a57;
+}
+.stops span[data-tone='changes'] {
+  width: 6px;
+  height: 6px;
+  background: var(--orange);
+}
 .sr {
   position: absolute;
   width: 1px;

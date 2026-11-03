@@ -1,8 +1,17 @@
 import type { AnalysisRun, ReviewSession } from './model.js';
-import { checkpointSnapshots, sameReviewedSource } from './review-workflow.js';
+import { checkpointSnapshots, reviewDecision, sameReviewedSource } from './review-workflow.js';
 
 export type SessionReviewState =
-  'new' | 'ready' | 'sent' | 'local-sent' | 'running' | 'partial' | 'failed' | 'cancelled';
+  | 'new'
+  | 'ready'
+  | 'sent'
+  | 'approved'
+  | 'review-again'
+  | 'local-sent'
+  | 'running'
+  | 'partial'
+  | 'failed'
+  | 'cancelled';
 
 export interface SessionListItem {
   id: string;
@@ -23,28 +32,42 @@ export function sessionListItem(session: ReviewSession): SessionListItem {
     b.at.localeCompare(a.at),
   );
   const targets = session.snapshots.filter((snapshot) => snapshot.pr || snapshot.local);
-  const reviewed = targets.map((snapshot) =>
-    checkpoints.find(
+  const onCurrent = targets.map((snapshot) =>
+    checkpoints.filter(
       (checkpoint) =>
         checkpoint.repoId === snapshot.repoId &&
         checkpointSnapshots(session, checkpoint).some((old) => sameReviewedSource(old, snapshot)),
     ),
   );
+  const reviewed = onCurrent.map((list) => list[0]);
+  const approved = onCurrent.map((list) => reviewDecision(list) === 'APPROVE');
+  // You approved an earlier version of a PR, and its code changed since.
+  const approvalLost = targets.some(
+    (snapshot, i) =>
+      !approved[i] &&
+      reviewDecision(
+        checkpoints.filter((c) => c.kind === 'github' && c.repoId === snapshot.repoId),
+      ) === 'APPROVE',
+  );
   const state = session.run?.state ?? 'ready';
   const reviewState: SessionReviewState =
     state === 'running'
       ? 'running'
-      : reviewed.length && reviewed.every(Boolean)
-        ? reviewed.some((checkpoint) => checkpoint?.kind === 'github')
-          ? 'sent'
-          : 'local-sent'
-        : !session.run
-          ? 'new'
-          : state === 'complete'
-            ? 'ready'
-            : state === 'ready'
+      : approved.length && approved.every(Boolean)
+        ? 'approved'
+        : approvalLost
+          ? 'review-again'
+          : reviewed.length && reviewed.every(Boolean)
+            ? reviewed.some((checkpoint) => checkpoint?.kind === 'github')
+              ? 'sent'
+              : 'local-sent'
+            : !session.run
               ? 'new'
-              : state;
+              : state === 'complete'
+                ? 'ready'
+                : state === 'ready'
+                  ? 'new'
+                  : state;
   return {
     id: session.id,
     title: session.title,

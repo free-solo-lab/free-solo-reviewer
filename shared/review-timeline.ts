@@ -1,5 +1,11 @@
 import type { Contract, ReviewSession, Snapshot, ReviewRevision } from './model.js';
-import { checkpointSnapshots, lineage, sourceIdentity } from './review-workflow.js';
+import {
+  checkpointSnapshots,
+  lineage,
+  reviewDecision,
+  sourceIdentity,
+  type ReviewCheckpoint,
+} from './review-workflow.js';
 
 export interface ReviewPoint {
   kind?: 'base' | 'analysis' | 'review' | 'current';
@@ -8,6 +14,8 @@ export interface ReviewPoint {
   id: string;
   at: string;
   snapshots: Snapshot[];
+  /** Your standing GitHub decision on exactly this code. */
+  decision?: ReturnType<typeof reviewDecision>;
 }
 export interface ReviewRangeComparison {
   from: string;
@@ -48,16 +56,15 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
       aliases: [...(prior?.aliases ?? []), candidate.id],
     });
   }
+  const sent = new Map<string, ReviewCheckpoint[]>();
   for (const checkpoint of session.workflow?.checkpoints ?? []) {
     const snapshots = checkpointSnapshots(session, checkpoint);
+    if (scope(snapshots) !== scope(session.snapshots)) continue;
+    const key = contents(snapshots);
+    if (checkpoint.kind === 'github') sent.set(key, [...(sent.get(key) ?? []), checkpoint]);
     // A review sent on the current code becomes a stage only once the PR brings new code.
-    if (
-      scope(snapshots) !== scope(session.snapshots) ||
-      contents(snapshots) === contents(session.snapshots)
-    )
-      continue;
-    const key = contents(snapshots),
-      prior = unique.get(key);
+    if (key === contents(session.snapshots)) continue;
+    const prior = unique.get(key);
     unique.set(key, {
       id: checkpoint.id,
       at: checkpoint.at,
@@ -67,6 +74,11 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
       aliases: [...(prior?.aliases ?? []), checkpoint.id],
     });
   }
+  for (const [key, point] of unique) {
+    const decision = reviewDecision(sent.get(key) ?? []);
+    if (decision) point.decision = decision;
+  }
+  const currentDecision = reviewDecision(sent.get(contents(session.snapshots)) ?? []);
   const points = [...unique.values()].sort(
     (a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0),
   );
@@ -90,6 +102,7 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
         session.update?.at ??
         session.createdAt,
       snapshots: session.snapshots,
+      ...(currentDecision && { decision: currentDecision }),
     },
   ];
 }
