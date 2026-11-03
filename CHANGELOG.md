@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/); the README explains [what each part of the version means](README.md#versions).
 
+## [0.1.2] — 2026-11-03
+
+A patch release: fixes only, no new features and no changes to the data format. Update without preparation.
+
+### Fixed
+
+- Errors in the corner are no longer hidden behind other notices: the notices stack, and the floating “Descriptions awaiting an update” panel is removed.
+- **Send review** is disabled for an empty review with **Comment** or **Request changes**, and the dialog says to add a comment or choose **Approve**, instead of an error from GitHub after sending.
+- The arrow in the base branch picker of a local review points from the reviewed branch to the base, as in a GitHub pull request.
+
 ## [0.1.1] — 2026-11-02
 
 A patch release: fixes and dependency security updates only, no new features and no changes to the data format. Update without preparation.
@@ -42,5 +52,6 @@ The first public alpha. Features, the data format and settings may still change.
 - Replies and reactions for every reviewer comment on the **Comments** page: line comments, conversation comments and review summaries.
 - Secret scanning and `shellcheck` in CI; issue and pull request templates.
 
+[0.1.2]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.0-alpha.1...v0.1.1
 [0.1.0-alpha.1]: https://github.com/free-solo-lab/free-solo-reviewer/releases/tag/v0.1.0-alpha.1
