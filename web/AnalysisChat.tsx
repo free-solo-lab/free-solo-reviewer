@@ -6,7 +6,7 @@ import type { AnalysisRun, ReviewSession, Snapshot } from '../shared/model';
 import { api } from './api';
 import { fetchSession } from './sessions';
 import { Markdown } from './Markdown';
-import { IconButton } from './icons';
+import { Icon, IconButton, type IconName } from './icons';
 import { cx } from './ui/cx';
 import styles from './AnalysisChat.module.css';
 import { errorMessage } from '../shared/errors';
@@ -14,14 +14,6 @@ import { getLanguage, t } from '../shared/i18n';
 import { commandSummary, fileChangesSummary, fixCommandSummary } from '../shared/command-summary';
 
 const TerminalView = lazy(() => import('./TerminalView'));
-const labels: Record<string, string> = {
-  prepare: t('Preparation'),
-  review: t('Diagrams and changes'),
-  scenarios: t('Diagrams'),
-  sql: t('Database'),
-  tests: t('Tests'),
-  done: t('Done'),
-};
 export function AnalysisChat({
   sessionId,
   run,
@@ -112,6 +104,26 @@ export function AnalysisChat({
     return () => observer.disconnect();
   }, [logOpen]);
   const running = run?.state === 'running';
+  // One icon in the Codex tab tells whether Codex works, waits for you or has finished.
+  const fixRunning =
+    fixChat?.state === 'planning' ||
+    fixChat?.state === 'applying' ||
+    (fixChat?.state === 'stepped' && !!fixChat.autoSteps);
+  const fixLatest = (fixChat?.events.at(-1)?.at ?? '') > (run?.finishedAt ?? run?.startedAt ?? '');
+  const status: { tone: string; icon: IconName; label: string } | undefined =
+    running || fixRunning
+      ? { tone: 'running', icon: 'refresh', label: t('Codex is working') }
+      : fixChat?.state === 'waiting_input'
+        ? { tone: 'attention', icon: 'alert', label: t('Codex is waiting for your answer') }
+        : fixChat?.state === 'waiting_approval'
+          ? { tone: 'attention', icon: 'alert', label: t('Codex is waiting for approval') }
+          : run?.state === 'failed' || (fixLatest && fixChat?.state === 'failed')
+            ? { tone: 'failed', icon: 'alert', label: t('Finished with an error') }
+            : run?.state === 'partial' || run?.state === 'cancelled'
+              ? { tone: 'stopped', icon: 'stop', label: t('Codex stopped') }
+              : run
+                ? { tone: 'done', icon: 'check', label: t('Done') }
+                : undefined;
   const canSend = !busy && !!run && !!text.trim() && run.state !== 'complete';
   const action = async (endpoint: string, body: object = {}) => {
     setBusy(true);
@@ -229,8 +241,19 @@ export function AnalysisChat({
             aria-selected={tab === 'codex'}
             className={cx(styles.panelTab, tab === 'codex' && styles.active)}
             onClick={() => show('codex')}
+            title={status?.label}
           >
             Codex
+            {status && (
+              <span
+                className={styles.codexStatus}
+                data-tone={status.tone}
+                role="img"
+                aria-label={status.label}
+              >
+                <Icon name={status.icon} size={12} />
+              </span>
+            )}
           </button>
           <button
             role="tab"
@@ -263,32 +286,8 @@ export function AnalysisChat({
           </>
         ) : (
           <>
-            <span className={styles.analysisChatStage} role="status">
-              {running && <span className="status-dot running" />}
-              {labels[run?.checkpoint?.stage ?? ''] ?? t('Ready to analyze')}
-              {run?.state === 'cancelled'
-                ? t(' · stopped')
-                : run?.state === 'partial'
-                  ? t(' · paused')
-                  : ''}
-            </span>
-            <span className={styles.analysisChatScope}>
-              {snapshots
-                .filter((s) => s.pr || s.local)
-                .map((s) =>
-                  t(
-                    '{0} · {1} · {2} files',
-                    s.repoName,
-                    s.local
-                      ? `${s.local.baseRef} → ${s.local.branchName ?? t('working copy')}`
-                      : `PR #${s.pr!.number}`,
-                    s.files.length,
-                  ),
-                )
-                .join('; ')}
-            </span>
             {run?.usage && (
-              <small title={t('Input includes cached tokens')}>
+              <small className={styles.usage} title={t('Input includes cached tokens')}>
                 {t('Input')} {run.usage.input.toLocaleString(getLanguage())} {t('· Cache')}{' '}
                 {run.usage.cached.toLocaleString(getLanguage())} {t('· Output')}{' '}
                 {run.usage.output.toLocaleString(getLanguage())}

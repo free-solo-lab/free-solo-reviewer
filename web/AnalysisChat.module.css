@@ -23,16 +23,6 @@
 .analysisChatTitle {
   font-size: 12.5px;
 }
-.analysisChatStage {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--green);
-  white-space: nowrap;
-}
-.analysisChatStage :global(.status-dot) {
-  margin: 0;
-}
 .analysisChatScope {
   flex: 1;
   min-width: 0;
@@ -43,6 +33,40 @@
 }
 .analysisChat > header small {
   white-space: nowrap;
+}
+.usage {
+  margin-left: auto;
+}
+.codexStatus {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+.codexStatus[data-tone='running'] {
+  color: #416bc6;
+}
+.codexStatus[data-tone='running'] :global(.icon) {
+  animation: codex-spin 1.8s linear infinite;
+}
+.codexStatus[data-tone='done'] {
+  color: #2f8a57;
+}
+.codexStatus[data-tone='attention'] {
+  color: var(--orange);
+}
+.codexStatus[data-tone='failed'] {
+  color: var(--red);
+}
+@keyframes codex-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .codexStatus[data-tone='running'] :global(.icon) {
+    animation: none;
+  }
 }
 .analysisChatLog {
   flex: 1;
