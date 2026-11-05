@@ -104,6 +104,10 @@ const paths = {
   chevronUp: <path d="m18 15-6-6-6 6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
   arrowUp: <path d="M12 19V5M5 12l7-7 7 7" />,
+  // GitHub's diff expanders: an arrow towards the hidden code over a dotted edge.
+  foldUp: <path d="M12 15V4M7 9l5-5 5 5M4 20h1M9.5 20h1M13.5 20h1M19 20h1" />,
+  foldDown: <path d="M12 9v11M7 15l5 5 5-5M4 4h1M9.5 4h1M13.5 4h1M19 4h1" />,
+  unfold: <path d="M12 3v6M9 6l3-3 3 3M12 21v-6M9 18l3 3 3-3M4 12h1M9.5 12h1M13.5 12h1M19 12h1" />,
   arrowLeft: <path d="M19 12H5M12 19l-7-7 7-7" />,
   arrowRight: <path d="M5 12h14M12 5l7 7-7 7" />,
   close: <path d="M18 6 6 18M6 6l12 12" />,

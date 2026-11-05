@@ -1,5 +1,6 @@
 import type { AnalysisResult, Evidence, IndexedMethod, Scenario } from './model.js';
 import { databaseParticipant, overlaps, type SequenceScenario } from './sequence.js';
+import { sequenceActivations } from './sequence-activations.js';
 import { t } from './i18n.js';
 
 export interface TransactionRegion {
@@ -40,6 +41,12 @@ const methodKey = (method: IndexedMethod) =>
   `${method.evidence.repoId}:${method.evidence.side}:${method.evidence.path}:${method.evidence.startLine}`;
 const classPath = (id: string) =>
   id.startsWith('class:') ? decodeURIComponent(id.split(':').slice(2).join(':')) : null;
+const stem = (path: string) =>
+  path
+    .split('/')
+    .pop()!
+    .replace(/\.(java|kt)$/, '')
+    .toLowerCase();
 function reachableMethods(root: IndexedMethod, methods: IndexedMethod[]) {
   const reached = new Map<string, IndexedMethod>();
   const visit = (method: IndexedMethod) => {
@@ -49,6 +56,7 @@ function reachableMethods(root: IndexedMethod, methods: IndexedMethod[]) {
       const parts = call.split('.'),
         name = parts.at(-1)!,
         receiver = parts.slice(0, -1).join('.');
+      const owner = receiver.toLowerCase();
       const targets = methods.filter(
         (candidate) =>
           candidate.name === name &&
@@ -56,13 +64,15 @@ function reachableMethods(root: IndexedMethod, methods: IndexedMethod[]) {
           candidate.evidence.side === method.evidence.side &&
           (!receiver || receiver === 'this'
             ? candidate.evidence.path === method.evidence.path
-            : candidate.evidence.path
-                .split('/')
-                .pop()!
-                .replace(/\.(java|kt)$/, '')
-                .toLowerCase() === receiver.toLowerCase()),
+            : // A Spring bean is usually injected as its interface; the code runs in its Impl.
+              [owner, `${owner}impl`].includes(stem(candidate.evidence.path))),
       );
-      if (targets.length === 1) visit(targets[0]);
+      // The interface declaration and its Impl are one call, not an ambiguous overload.
+      if (
+        targets.length === 1 ||
+        new Set(targets.map((target) => stem(target.evidence.path))).size === 2
+      )
+        targets.forEach(visit);
     }
   };
   visit(root);
@@ -74,10 +84,22 @@ function scopedParticipants(
   end: number,
   repoId: string,
   paths: Set<string>,
+  /** Steps that run inside the transactional call on the diagram, whatever class they are in. */
+  nested: ReadonlySet<number> = new Set(),
 ) {
+  const inside = new Set(
+    scenario.steps.flatMap((step, i) =>
+      i >= start && i <= end && nested.has(i)
+        ? step.kind === 'return'
+          ? [step.from]
+          : [step.from, step.to]
+        : [],
+    ),
+  );
   return [
     ...new Set(scenario.steps.slice(start, end + 1).flatMap((step) => [step.from, step.to])),
   ].filter((id) => {
+    if (inside.has(id)) return true;
     const path = classPath(id);
     return path
       ? paths.has(path) && id.startsWith(`class:${encodeURIComponent(repoId)}:`)
@@ -92,6 +114,7 @@ export function transactionRegions(
 ): TransactionRegion[] {
   const methods = result.indexes.flatMap((i) => i.methods),
     regions: TransactionRegion[] = [];
+  const activations = sequenceActivations(scenario.steps);
   for (const method of methods) {
     const mark = annotation(method);
     if (!mark) continue;
@@ -146,9 +169,20 @@ export function transactionRegions(
     const groups: number[][] = [];
     const reachable = reachableMethods(method, methods);
     const paths = new Set(reachable.map((candidate) => candidate.evidence.path));
+    // On the diagram the method runs until it returns: everything it calls in between,
+    // e.g. queries of a DAO Impl the index cannot link to the injected interface, is inside.
+    const nested = new Set(
+      matching.flatMap((i) => {
+        const step = scenario.steps[i];
+        if (step.kind !== 'call' || classPath(step.to) !== method.evidence.path) return [];
+        const bar = activations.find((a) => a.start === i && a.lane === step.to);
+        return bar ? Array.from({ length: bar.end - i }, (_, n) => i + 1 + n) : [];
+      }),
+    );
     const scoped = scenario.steps.flatMap((step, i) =>
       i >= matching[0] &&
       (matching.includes(i) ||
+        nested.has(i) ||
         (!(step.kind === 'call' && classPath(step.from) && !paths.has(classPath(step.from)!)) &&
           step.evidence.some((ref) =>
             reachable.some((candidate) => overlaps(ref, candidate.evidence)),
@@ -188,6 +222,7 @@ export function transactionRegions(
             group.at(-1)!,
             method.evidence.repoId,
             paths,
+            nested,
           ),
         }),
       );

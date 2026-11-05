@@ -13,6 +13,7 @@ import {
 } from '../queries';
 import { GitHubLoginDialog } from '../dialogs/GitHubLoginDialog';
 import { CodexLoginDialog } from '../dialogs/CodexLoginDialog';
+import { IssuesDialog } from '../dialogs/IssuesDialog';
 import { errorMessage } from '../../shared/errors';
 import { SkeletonRows } from '../ui/Skeleton';
 import { isStaleRequest } from '../../shared/review-requests';
@@ -25,19 +26,11 @@ import { ReviewListItem } from './ReviewListItem';
 export function Sidebar() {
   const settings = !!useMatch('/settings/*');
   const statistics = !!useMatch('/settings/statistics');
-  const issues = !!useMatch('/settings/issues');
-  const unreadFeedback = useUnreadFeedback();
   // Both hooks run on every render: a short-circuit would change the hook order.
   const generalPage = !!useMatch('/settings/general'),
     settingsRoot = !!useMatch('/settings');
   const general = generalPage || settingsRoot;
-  const settingsSection = statistics
-    ? 'statistics'
-    : issues
-      ? 'issues'
-      : general
-        ? 'general'
-        : 'analysis';
+  const settingsSection = statistics ? 'statistics' : general ? 'general' : 'analysis';
   const requestsPage = !!useMatch('/requests');
   const reviewRequests = useReviewRequests();
   // Only fresh requests are counted; stale ones stay folded on the page.
@@ -97,7 +90,6 @@ export function Sidebar() {
                 ['general', '/settings/general', 'settings', t('General')],
                 ['analysis', '/settings/analysis', 'sparkles', t('Analysis and prompts')],
                 ['statistics', '/settings/statistics', 'history', t('Analysis statistics')],
-                ['issues', '/settings/issues', 'message', t('Issues')],
               ] as const
             ).map(([id, to, icon, label]) => (
               <Link
@@ -110,11 +102,6 @@ export function Sidebar() {
               >
                 <Icon name={icon} />
                 <span className={styles.sidebarRowLabel}>{label}</span>
-                {id === 'issues' && unreadFeedback > 0 && (
-                  <i className={styles.unread} aria-label={t('New replies: {0}', unreadFeedback)}>
-                    {unreadFeedback}
-                  </i>
-                )}
               </Link>
             ))}
           </nav>
@@ -227,6 +214,7 @@ function UserMenu({ login, codexConnected }: { login?: string | null; codexConne
   const [open, setOpen] = useState(false),
     [loggingIn, setLoggingIn] = useState(false),
     [connectingCodex, setConnectingCodex] = useState(false),
+    [reporting, setReporting] = useState(false),
     [error, setError] = useState('');
   const current = github?.current ?? login;
   // Until gh answers, the account is unknown rather than missing.
@@ -319,8 +307,20 @@ function UserMenu({ login, codexConnected }: { login?: string | null; codexConne
             <Icon name="sparkles" />
             {codexConnected ? t('Codex is connected · change…') : t('Connect Codex…')}
           </button>
+          <button
+            onClick={() => {
+              setOpen(false);
+              setReporting(true);
+            }}
+          >
+            <Icon name="message" />
+            {t('Report a problem…')}
+            {unreadFeedback > 0 && (
+              <i className={styles.unread}>{t('New replies: {0}', unreadFeedback)}</i>
+            )}
+          </button>
           <Link
-            to={unreadFeedback > 0 ? '/settings/issues' : '/settings/general'}
+            to="/settings/general"
             state={{
               from: location.pathname.startsWith('/sessions/')
                 ? location.pathname + location.search
@@ -330,9 +330,6 @@ function UserMenu({ login, codexConnected }: { login?: string | null; codexConne
           >
             <Icon name="settings" />
             {t('Settings')}
-            {unreadFeedback > 0 && (
-              <i className={styles.unread}>{t('New replies: {0}', unreadFeedback)}</i>
-            )}
           </Link>
         </nav>
       )}
@@ -342,6 +339,7 @@ function UserMenu({ login, codexConnected }: { login?: string | null; codexConne
         </p>
       )}
       {connectingCodex && <CodexLoginDialog onClose={() => setConnectingCodex(false)} />}
+      {reporting && <IssuesDialog onClose={() => setReporting(false)} />}
       {loggingIn && (
         <GitHubLoginDialog
           onClose={() => setLoggingIn(false)}

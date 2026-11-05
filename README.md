@@ -11,7 +11,7 @@
 Reviewer pins the exact code of a pull request, indexes it, asks [Codex](https://github.com/openai/codex) for a structured analysis and ties every claim to the source lines it is based on. You get call sequences across services, transaction boundaries, SQL, database schema changes, API contracts and tests in one place — and you stay in charge of the decision and of what gets published.
 
 > [!WARNING]
-> **Alpha version.** Reviewer is in early development: features, data format and settings may change between versions, and some parts are rough. Keep a backup of the data folder if your reviews matter, and please report problems in **Settings → Issues** or on [GitHub](https://github.com/free-solo-lab/free-solo-reviewer/issues).
+> **Alpha version.** Reviewer is in early development: features, data format and settings may change between versions, and some parts are rough. Keep a backup of the data folder if your reviews matter, and please report problems with **Report a problem…** in the user menu or on [GitHub](https://github.com/free-solo-lab/free-solo-reviewer/issues).
 
 It runs on your machine as a browser app or a macOS desktop app. The interface is available in English and Russian; Codex writes its descriptions in the language you choose. [Краткая инструкция на русском](README.ru.md).
 
@@ -146,7 +146,8 @@ Open the user menu at the bottom left → **Settings**.
 - **General** — the interface language, which is also the language Codex writes descriptions and answers in; the GitHub and Codex connections; the data folder; the version.
 - **Analysis and prompts** — a scheme of the analysis: its stages in the order they run, what each sends to Codex and which prompts its request is built from. Turn off change descriptions, scenario completion, SQL or test descriptions right on the scheme to save time and tokens; a skipped stage can still be run for one review from its page. Click a prompt to read or edit it in a panel on the right; required `{{variables}}` are filled in by the app.
 - **Analysis statistics** — run history with stages, Codex requests, duration and input, cached and output tokens.
-- **Issues** — report a bug, request a feature, suggest an improvement or ask a question. It becomes a public issue in [free-solo-lab/free-solo-reviewer](https://github.com/free-solo-lab/free-solo-reviewer/issues) under your GitHub account; replies show up here, with a badge in the user menu until you read them. `REVIEW_FEEDBACK_REPO` points a fork to its own repository.
+
+**Report a problem…** in the same user menu opens a popup to report a bug, request a feature, suggest an improvement or ask a question. It becomes a public issue in [free-solo-lab/free-solo-reviewer](https://github.com/free-solo-lab/free-solo-reviewer/issues) under your GitHub account; your issues and their replies are listed in the same popup, with a badge in the user menu until you read them. `REVIEW_FEEDBACK_REPO` points a fork to its own repository.
 
 ## Configuration
 

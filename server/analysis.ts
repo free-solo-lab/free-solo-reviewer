@@ -24,6 +24,7 @@ import type { AnalysisInput, AnalysisProvider } from './provider.js';
 import { AnalysisMeasurements } from './analysis-statistics.js';
 import { Store } from './store.js';
 import { AppError } from './process.js';
+import { errorDetails, systemLog } from './system-log.js';
 import { archiveReview } from './revisions.js';
 import { mergeIncremental, affectedPrevious, stableArtifactIds } from './incremental.js';
 import { reviewScopeSnapshots } from '../shared/analysis-scope.js';
@@ -446,6 +447,7 @@ export class AnalysisManager {
         run.state = controller.signal.aborted ? 'cancelled' : 'partial';
         if (!controller.signal.aborted) {
           run.error = errorMessage(error);
+          systemLog.error('analysis', `${session.title}: ${run.error}`, errorDetails(error));
           if (work.error) emit(`${work.error}: ${run.error}`);
         }
       } finally {
@@ -1427,6 +1429,7 @@ export class AnalysisManager {
       } else {
         run.state = 'partial';
         run.error = errorMessage(e);
+        systemLog.error('analysis', `${session.title}: ${run.error}`, errorDetails(e));
         run.result.gaps.push(t('Codex/analysis: {0}', run.error));
         emit(t('Analysis error: {0}', run.error));
       }

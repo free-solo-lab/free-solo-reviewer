@@ -8,7 +8,6 @@ import { CodexLoginDialog } from '../dialogs/CodexLoginDialog';
 import { GitHubLoginDialog } from '../dialogs/GitHubLoginDialog';
 import { Icon } from '../icons';
 import { AnalysisSettings } from './AnalysisSettings';
-import { IssuesSettings } from './IssuesSettings';
 import styles from './SettingsPage.module.css';
 import { getLanguage, t, type Language } from '../../shared/i18n';
 import { APP_VERSION, RELEASE_NOTES_URL } from '../../shared/version';
@@ -20,9 +19,8 @@ export function SettingsPage() {
   // Both hooks run on every render: a short-circuit would change the hook order.
   const generalPage = !!useMatch('/settings/general'),
     settingsRoot = !!useMatch('/settings');
-  const issues = !!useMatch('/settings/issues');
   const general = generalPage || settingsRoot;
-  return issues ? <IssuesSettings /> : general ? <GeneralSettings /> : <AnalysisSettings />;
+  return general ? <GeneralSettings /> : <AnalysisSettings />;
 }
 
 function GeneralSettings() {

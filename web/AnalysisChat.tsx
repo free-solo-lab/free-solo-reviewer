@@ -13,6 +13,8 @@ import { errorMessage } from '../shared/errors';
 import { getLanguage, t } from '../shared/i18n';
 import { commandSummary, fileChangesSummary, fixCommandSummary } from '../shared/command-summary';
 
+import { LogsView, useSystemLog } from './LogsView';
+
 const TerminalView = lazy(() => import('./TerminalView'));
 export function AnalysisChat({
   sessionId,
@@ -61,7 +63,10 @@ export function AnalysisChat({
     };
   }, [sessionId]);
   // The terminal mounts on first use and stays, so switching tabs keeps its screen.
-  const [tab, setTab] = useState<'codex' | 'terminal'>('codex');
+  const [tab, setTab] = useState<'codex' | 'terminal' | 'logs'>('codex');
+  const systemLog = useSystemLog();
+  // Errors that arrived while the log was not on screen are counted on its tab.
+  const [logsSeenAt, setLogsSeenAt] = useState(() => new Date().toISOString());
   const [terminalUsed, setTerminalUsed] = useState(false);
   const folders = snapshots.filter(
     (s, i) => snapshots.findIndex((other) => other.repoId === s.repoId) === i,
@@ -70,7 +75,14 @@ export function AnalysisChat({
     (folders.find((s) => s.pr || s.local) ?? folders[0])?.repoId ?? '',
   );
   const [cwd, setCwd] = useState('');
-  const show = (next: 'codex' | 'terminal') => {
+  const logsOpen = open && tab === 'logs';
+  useEffect(() => {
+    if (logsOpen) setLogsSeenAt(new Date().toISOString());
+  }, [logsOpen, systemLog.entries.length]);
+  const unseenErrors = logsOpen
+    ? 0
+    : systemLog.entries.filter((entry) => entry.level === 'error' && entry.at > logsSeenAt).length;
+  const show = (next: 'codex' | 'terminal' | 'logs') => {
     if (next === 'terminal') setTerminalUsed(true);
     if (tab === next) setOpen(!open);
     else {
@@ -263,8 +275,22 @@ export function AnalysisChat({
           >
             {t('Terminal')}
           </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'logs'}
+            className={cx(styles.panelTab, tab === 'logs' && styles.active)}
+            onClick={() => show('logs')}
+            title={t('System logs: failed requests, commands, analysis and interface errors')}
+          >
+            {t('Logs')}
+            {unseenErrors > 0 && (
+              <span className={styles.logsBadge} aria-label={t('New errors: {0}', unseenErrors)}>
+                {unseenErrors}
+              </span>
+            )}
+          </button>
         </div>
-        {tab === 'terminal' ? (
+        {tab === 'logs' ? null : tab === 'terminal' ? (
           <>
             {folders.length > 1 && (
               <select
@@ -305,6 +331,9 @@ export function AnalysisChat({
             onCwd={setCwd}
           />
         </Suspense>
+      )}
+      {logsOpen && (
+        <LogsView entries={systemLog.entries} error={systemLog.error} onClear={systemLog.clear} />
       )}
       {fixChatOpen && (
         <FixChatWindow

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { systemLog } from './system-log.js';
 export class AppError extends Error {
   constructor(
     message: string,
@@ -59,6 +60,23 @@ export async function command(
         env: options.env ?? process.env,
       },
       (error, stdout, stderr) => {
+        if (error) {
+          // Arguments are cut short: a prompt or a patch would bury the reason.
+          const call = [
+            binary,
+            ...args.map((arg) => (arg.length > 80 ? `${arg.slice(0, 77)}…` : arg)),
+          ]
+            .join(' ')
+            .slice(0, 400);
+          // Exit 1 without output is how probes answer "no" (git symbolic-ref --quiet,
+          // rev-parse --verify --quiet); only other failures are warnings.
+          systemLog.add(
+            error.code === 1 && !stderr.trim() && !error.killed ? 'info' : 'warn',
+            'command',
+            `${call} → ${error.killed ? `killed after ${timeoutMs} ms` : `exit ${error.code ?? error.signal}`} (${Math.round(performance.now() - started)} ms)`,
+            (stderr || error.message).trim().slice(-4000),
+          );
+        }
         if (error)
           reject(
             new CommandError(

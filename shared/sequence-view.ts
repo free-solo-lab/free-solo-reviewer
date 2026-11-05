@@ -1,7 +1,13 @@
 import { stepDescription } from './step-description.js';
 import { evidenceService } from './source-service.js';
 import type { Evidence, SourceIndex, Snapshot } from './model.js';
-import { databaseOwner, overlaps, type SequenceScenario } from './sequence.js';
+import {
+  databaseCall,
+  databaseFile,
+  databaseOwner,
+  overlaps,
+  type SequenceScenario,
+} from './sequence.js';
 import { withExternalBoundary } from './sequence-boundary.js';
 import { databaseMethod } from './sequence-method.js';
 import { indexedCallChain, sameInvocation } from './sequence-calls.js';
@@ -92,12 +98,12 @@ export function sequenceView(
       );
       const databaseRefs = refs.filter(
         (e) =>
-          /(?:Repository|Repo|Dao|DAO)\.(?:java|kt)$/.test(e.path) ||
+          databaseFile(e.path) ||
           indexes.some((index) =>
             index.methods.some(
               (method) =>
                 overlaps(method.evidence, e) &&
-                (method.callSites?.some((call) => call.database) ||
+                (method.callSites?.some(databaseCall) ||
                   method.calls.some((call) => /^(?:dsl\w*|jdbc\w*|entityManager)\./i.test(call))),
             ),
           ),

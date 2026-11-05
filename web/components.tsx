@@ -21,10 +21,10 @@ import type { MethodView } from '../shared/viewed-methods';
 import { commentsAtLine } from '../shared/review-comments';
 import { Markdown } from './Markdown';
 import { serviceGroups } from '../shared/graph';
-import { databaseOwner } from '../shared/sequence';
+import { databaseFile, databaseOwner } from '../shared/sequence';
 import { sourceMethodRows } from '../shared/source-methods';
 import type { CodeComparison } from '../shared/code-comparison';
-import { sourceDiffRows, reviewDiffRows } from '../shared/source-diff';
+import { sourceDiffRows, reviewDiffRows, type SourceDiffRow } from '../shared/source-diff';
 import type { MethodLink } from '../shared/code-navigation';
 import { sequenceParticipantLayout, type SequenceParticipant } from '../shared/sequence-view';
 import { sequenceMethod } from '../shared/sequence-method';
@@ -47,11 +47,19 @@ import { useEditableCode, type InlineEditing } from './workspace/useEditableCode
 import { visibleText } from './workspace/editable-code';
 import { codeLineChunks } from '../shared/code-edits';
 import { sourceChangeBlocks, nextSourceChange } from '../shared/source-changes';
+import {
+  expandFold,
+  foldActions,
+  hiddenRange,
+  sourceFolds,
+  type FoldReveal,
+  type SourceFold,
+} from '../shared/source-folds';
 import { scopedSourceRows } from '../shared/scenario-code';
 import { errorMessage } from '../shared/errors';
 import { Icon, IconButton } from './icons';
 import { Dialog, DialogClose, DialogTitle } from './ui/Dialog';
-import { t } from '../shared/i18n';
+import { plural, t } from '../shared/i18n';
 // Swagger and its 180 KB stylesheet load only when a contract is opened.
 const Swagger = lazy(() =>
   Promise.all([import('swagger-ui-react'), import('swagger-ui-react/swagger-ui.css')]).then(
@@ -457,11 +465,13 @@ export function Sequence({
               Math.min(88, Math.floor((Math.abs(x(s.to) - x(s.from)) || 220) / 6) - 4),
             );
             const sql = s.kind === 'database';
+            // A query step always opens the SQL drawer, never the method code: when the
+            // index cannot pin the query method, the drawer explains why and links the code.
             const sqlEvidence =
               method.evidence ??
-              (indexes.length === 0
-                ? (s.evidence.find((ref) => /Repository|Dao|DAO/.test(ref.path)) ?? s.evidence[0])
-                : undefined);
+              s.evidence.find((ref) => databaseFile(ref.path)) ??
+              s.evidence.find((ref) => /Repository|Dao|DAO/.test(ref.path)) ??
+              s.evidence[0];
             const openMethod = () =>
               sql && onSqlSelect && sqlEvidence
                 ? onSqlSelect(sqlEvidence)
@@ -594,6 +604,48 @@ export function Sequence({
           })}
         </svg>
       </SequenceCanvas>
+    </div>
+  );
+}
+/** GitHub's hunk separator: the hidden range and the arrows that reveal it. */
+function SourceFoldRow({
+  fold,
+  reveal,
+  rows,
+  onOpen,
+}: {
+  fold: SourceFold;
+  reveal?: FoldReveal;
+  rows: SourceDiffRow[];
+  onOpen: (action: 'up' | 'down' | 'all') => void;
+}) {
+  const range = hiddenRange(fold, reveal)!;
+  const count = range.end - range.start + 1;
+  const first = rows[range.start];
+  const labels = {
+    up: t('Show lines above the next change'),
+    down: t('Show lines below the previous change'),
+    all: t('Show all hidden lines'),
+  };
+  const icons = { up: 'foldUp', down: 'foldDown', all: 'unfold' } as const;
+  return (
+    <div className="source-fold" data-fold-start={range.start}>
+      <span className="source-fold-actions">
+        {foldActions(fold, rows.length, reveal).map((action) => (
+          <button
+            key={action}
+            aria-label={labels[action]}
+            title={labels[action]}
+            onClick={() => onOpen(action)}
+          >
+            <Icon name={icons[action]} size={14} />
+          </button>
+        ))}
+      </span>
+      <code>
+        @@ −{first.left ?? '…'} +{first.right ?? '…'} @@ ·{' '}
+        {plural(count, 'hidden line', 'hidden lines')}
+      </code>
     </div>
   );
 }
@@ -789,9 +841,12 @@ export function SourceCode({
 }) {
   const [expandedMethods, setExpandedMethods] = useState<Set<string>>(new Set());
   const [collapsedMethods, setCollapsedMethods] = useState<Set<string>>(new Set());
+  /** Unchanged code opened with the fold arrows, by the first row of each fold. */
+  const [foldReveals, setFoldReveals] = useState<Map<number, FoldReveal>>(new Map());
   useEffect(() => {
     setExpandedMethods(new Set());
     setCollapsedMethods(new Set());
+    setFoldReveals(new Map());
   }, [evidence.repoId, evidence.side, evidence.path, visitId]);
   const expandedTarget = useRef('');
   useEffect(() => {
@@ -1112,6 +1167,49 @@ export function SourceCode({
       ),
     [changedFile, evidence.path],
   );
+  const isNavigationTarget = (row: (typeof rows)[number]) =>
+    autoScroll &&
+    !row.historical &&
+    row.evidence.side === evidence.side &&
+    row.evidence.path === evidence.path &&
+    row.evidence.startLine >= evidence.startLine &&
+    row.evidence.startLine <= evidence.endLine;
+  const isSelected = (row: (typeof rows)[number]) =>
+    !row.historical &&
+    !!activeSelection &&
+    row.evidence.side === activeSelection.side &&
+    row.evidence.path === activeSelection.path &&
+    row.evidence.startLine >= activeSelection.startLine &&
+    row.evidence.startLine <= activeSelection.endLine;
+  // Like GitHub, unchanged code far from the changes is folded behind expand arrows. Editing
+  // needs every line in place, and a scenario's method range is already short.
+  const folds =
+    inlineEditing || ranges
+      ? []
+      : sourceFolds(rows, (i) => {
+          const { row, method, methodStart } = methodRows[i];
+          return (
+            // A folded method already shows as its header alone; a changed one keeps its
+            // header with the "Viewed" box. Unchanged methods fold away with their headers.
+            (!!method && isCollapsed(method)) ||
+            (methodStart && !!method && methodStats.has(method.key)) ||
+            // A file opened as a whole points at its first line; that is not a target.
+            (evidence.startLine > 1 && isNavigationTarget(row)) ||
+            isSelected(row) ||
+            rowComments(row).length > 0 ||
+            rowDiscussions(row).length > 0
+          );
+        });
+  const hiddenRows = new Map<number, { fold: SourceFold; first: boolean }>();
+  for (const fold of folds) {
+    const range = hiddenRange(fold, foldReveals.get(fold.start));
+    for (let i = range?.start ?? 0; range && i <= range.end; i++)
+      hiddenRows.set(i, { fold, first: i === range.start });
+  }
+  const openFold = (fold: SourceFold, action: 'up' | 'down' | 'all') =>
+    setFoldReveals((previous) =>
+      new Map(previous).set(fold.start, expandFold(fold, previous.get(fold.start), action)),
+    );
   useEffect(() => {
     if (!autoScroll) return;
     ref.current
@@ -1253,20 +1351,19 @@ export function SourceCode({
           const number = row.evidence.startLine;
           const folded = methodEntry && isCollapsed(methodEntry);
           if (folded && !methodStart) return null;
-          const navigationTarget =
-            autoScroll &&
-            !row.historical &&
-            row.evidence.side === evidence.side &&
-            row.evidence.path === evidence.path &&
-            number >= evidence.startLine &&
-            number <= evidence.endLine;
-          const selected =
-            !row.historical &&
-            activeSelection &&
-            row.evidence.side === activeSelection.side &&
-            row.evidence.path === activeSelection.path &&
-            number >= activeSelection.startLine &&
-            number <= activeSelection.endLine;
+          const hidden = hiddenRows.get(i);
+          if (hidden)
+            return hidden.first ? (
+              <SourceFoldRow
+                key={`fold:${hidden.fold.start}`}
+                fold={hidden.fold}
+                reveal={foldReveals.get(hidden.fold.start)}
+                rows={rows}
+                onOpen={(action) => openFold(hidden.fold, action)}
+              />
+            ) : null;
+          const navigationTarget = isNavigationTarget(row);
+          const selected = isSelected(row);
           const tokens = row.native
             ? (lines[number - 1] ?? [])
             : (patchTokens.get(`${row.kind}:${number}`) ?? []);
@@ -1872,6 +1969,11 @@ export function SqlQueryDrawer({
           <p className="alert error" role="alert">
             {error}
           </p>
+        )}
+        {error && !preview && (
+          <button className="text-button" onClick={onCode}>
+            {t('Open query code →')}
+          </button>
         )}
         {!preview && !error && <p role="status">{t('Preparing SQL…')}</p>}
         {preview && (

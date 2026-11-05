@@ -197,6 +197,72 @@ describe('transaction scopes on sequence diagrams', () => {
       'external:client',
     );
   });
+  it('keeps the transaction open over the queries of a DAO implementation it calls', () => {
+    const classId = (path: string) => `class:orders:${encodeURIComponent(path)}`;
+    const resource = method('post', 'api/AdjustmentApiResource.java', [], ['service.adjust']);
+    const adjust = method(
+      'adjust',
+      'service/TransferPairAdjustmentService.java',
+      ['@Transactional'],
+      ['c2cTransactionDao.getLastByPaymentId', 'c2cTransactionDao.getForUpdate'],
+      10,
+      40,
+    );
+    // Spring injects the interface; the query lives in its Impl.
+    const declared = method('getLastByPaymentId', 'dao/C2CTransactionDao.java', [], [], 5, 5);
+    const last = method(
+      'getLastByPaymentId',
+      'dao/C2CTransactionDaoImpl.java',
+      [],
+      ['getDslContext.selectFrom'],
+      119,
+      127,
+    );
+    const lock = method(
+      'getForUpdate',
+      'dao/C2CTransactionDaoImpl.java',
+      [],
+      ['getDslContext.selectFrom'],
+      130,
+      140,
+    );
+    const step = (
+      from: string,
+      to: string,
+      kind: 'call' | 'database',
+      refs: Evidence[],
+      label: string,
+    ): Scenario['steps'][number] => ({
+      id: label,
+      from,
+      to,
+      label,
+      kind,
+      change: 'added',
+      branch: '',
+      confidence: 'inferred',
+      evidence: refs,
+    });
+    const api = classId('api/AdjustmentApiResource.java'),
+      service = classId('service/TransferPairAdjustmentService.java'),
+      dao = classId('dao/C2CTransactionDaoImpl.java'),
+      db = databaseParticipant('orders');
+    const s: Scenario = {
+      ...scenario([]),
+      services: [api, service, dao, db],
+      steps: [
+        step(api, service, 'call', [resource.evidence, adjust.evidence], 'Service.adjust'),
+        step(service, dao, 'call', [evidence(adjust.evidence.path, 15, 15)], 'getLastByPaymentId'),
+        step(dao, db, 'database', [last.evidence], 'SQL'),
+        step(service, dao, 'call', [evidence(adjust.evidence.path, 20, 20)], 'getForUpdate'),
+        step(dao, db, 'database', [lock.evidence], 'SQL'),
+      ],
+    };
+    const regions = transactionRegions(s, data([resource, adjust, declared, last, lock]));
+    expect(regions.map((r) => [r.start, r.end])).toEqual([[0, 4]]);
+    expect(regions[0].participants).toEqual(expect.arrayContaining([service, dao, db]));
+    expect(regions[0].participants).not.toContain(api);
+  });
   it('reserves room for overlapping scope labels and closes frames before the next step', () => {
     const a = method('outer', 'service/Outer.kt', ['@Transactional']);
     const b = method('inner', 'service/Inner.kt', [

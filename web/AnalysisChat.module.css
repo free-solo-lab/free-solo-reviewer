@@ -34,6 +34,19 @@
 .analysisChat > header small {
   white-space: nowrap;
 }
+.logsBadge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 16px;
+  text-align: center;
+}
 .usage {
   margin-left: auto;
 }
