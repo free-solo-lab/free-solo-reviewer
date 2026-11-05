@@ -117,6 +117,45 @@ describe('sequence method and model links', () => {
     const wrong = { ...dbStep, evidence: [repo] };
     expect(sequenceMethod(wrong, [methods], []).evidence).toBeUndefined();
   });
+  it('finds the query of a DAO Impl that reaches jOOQ through getDslContext()', () => {
+    const service = { ...evidence, path: 'service/TransferPairAdjustmentService.java' };
+    const impl = {
+      ...evidence,
+      path: 'dao/C2CTransactionDaoImpl.java',
+      startLine: 119,
+      endLine: 127,
+    };
+    const methods: SourceIndex = {
+      ...index,
+      methods: [
+        { ...index.methods[0], name: 'adjust', evidence: service, calls: [] },
+        {
+          ...index.methods[0],
+          name: 'getLastByPaymentId',
+          signature: 'public C2cTransaction getLastByPaymentId(String paymentId)',
+          evidence: impl,
+          calls: ['getDslContext().selectFrom'],
+          callSites: [
+            {
+              name: 'selectFrom',
+              receiver: 'getDslContext()',
+              database: false,
+              transactionIds: [],
+              evidence: { ...impl, startLine: 121, endLine: 125 },
+            },
+          ],
+        },
+      ],
+    };
+    const dbStep = {
+      ...step,
+      kind: 'database' as const,
+      label: 'Выбирает транзакцию с максимальным идентификатором под блокировкой',
+      to: databaseParticipant('r'),
+      evidence: [impl, { ...service, startLine: 15, endLine: 15 }],
+    };
+    expect(sequenceMethod(dbStep, [methods], []).evidence).toEqual(impl);
+  });
   it('shows only the method and links Kotlin input/output models in the pinned snapshot', () => {
     const result = sequenceMethod(step, [index], [snapshot]);
     expect(result.label).toBe('register()');

@@ -75,4 +75,46 @@ describe('SQL method coverage', () => {
     wrong.query!.method = 'Repository.insert';
     expect(queryMatchesMethod(wrong, current)).toBe(false);
   });
+  it('counts jOOQ queries reached through a DSLContext getter, not the chained calls', () => {
+    const impl = method('src/main/dao/impl/C2CTransactionDaoImpl.java');
+    const ref = (line: number) => ({ ...impl.evidence, startLine: line, endLine: line });
+    impl.callSites = [
+      {
+        name: 'getDslContext',
+        receiver: '',
+        evidence: ref(12),
+        transactionIds: [],
+        database: false,
+      },
+      {
+        name: 'selectFrom',
+        receiver: 'getDslContext()',
+        evidence: ref(12),
+        transactionIds: [],
+        database: false,
+      },
+      {
+        name: 'where',
+        receiver: 'getDslContext().selectFrom(C2C_TRANSACTION)',
+        evidence: ref(13),
+        transactionIds: [],
+        database: false,
+      },
+    ];
+    const plain = method('src/main/service/Service.java');
+    plain.callSites = [{ ...impl.callSites[2], receiver: 'service', name: 'getDslContextName' }];
+    const snapshot = {
+      repoId: 'repo',
+      files: [impl, plain].map((m) => ({
+        path: m.evidence.path,
+        status: 'M' as const,
+        addedLines: [12],
+        removedLines: [] as number[],
+      })),
+      headFiles: [impl.evidence.path, plain.evidence.path],
+    } as Snapshot;
+    expect(
+      missingSqlMethods([snapshot], [{ methods: [impl, plain] }] as SourceIndex[], []),
+    ).toEqual([impl]);
+  });
 });

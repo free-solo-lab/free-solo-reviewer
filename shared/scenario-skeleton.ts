@@ -1,6 +1,7 @@
 import type { Evidence, IndexedCall, IndexedMethod, Snapshot, SourceIndex } from './model.js';
 import { activeMethods, calledMethods, directlyChanged, testPath } from './analysis-scope.js';
 import type { ScenarioRoot } from './scenario-coverage.js';
+import { databaseCall } from './sequence.js';
 
 /** A call the index resolves unambiguously on the way from an entry to changed code. */
 export interface SkeletonEdge {
@@ -71,7 +72,7 @@ export function scenarioSkeletons(
       );
       for (const call of calls) {
         if (edges.length >= MAX_EDGES) return;
-        if (call.database) {
+        if (databaseCall(call)) {
           edges.push({
             id: `E${edges.length + 1}`,
             rootId: root.id,

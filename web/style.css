@@ -1244,6 +1244,47 @@ nav {
 .source-code > .source-line:hover {
   background: #f3f3f3;
 }
+/* GitHub's hunk separator for folded unchanged code. */
+.source-code > .source-fold {
+  display: flex;
+  align-items: stretch;
+  min-width: 100%;
+  width: max-content;
+  min-height: 28px;
+  background: #ddf4ff;
+  color: #57606a;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+}
+.source-fold-actions {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 100px;
+  background: #b6e3ff;
+}
+.source-fold-actions button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #0969da;
+}
+.source-fold-actions button:hover {
+  background: #0969da;
+  color: #fff;
+}
+.source-fold > code {
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 30px;
+  white-space: pre;
+}
 .source-code > .source-line.addition {
   background: #e6ffec;
 }

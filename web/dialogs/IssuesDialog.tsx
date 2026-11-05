@@ -13,7 +13,7 @@ import { Dialog, DialogClose, DialogTitle } from '../ui/Dialog';
 import { Icon, IconButton } from '../icons';
 import { Markdown } from '../Markdown';
 import { cx } from '../ui/cx';
-import styles from './SettingsPage.module.css';
+import styles from '../pages/SettingsPage.module.css';
 import { getLanguage, plural, t, tc } from '../../shared/i18n';
 
 const placeholders: Record<FeedbackKind, string> = {
@@ -30,26 +30,41 @@ const when = (at: string) =>
     minute: '2-digit',
   });
 
-/** Feedback to the developers as GitHub issues of the project, with the replies to them. */
-export function IssuesSettings() {
+/**
+ * Feedback to the developers as GitHub issues of the project, with the replies to them.
+ * Opened from the user menu as a popup over whatever page is open.
+ */
+export function IssuesDialog({ onClose }: { onClose: () => void }) {
   const feedback = useFeedback();
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(null),
+    [form, setForm] = useState({ dirty: false, sending: false });
   const list = feedback.data;
   return (
-    <section className={styles.page} aria-label={t('Issues')}>
-      <header className={styles.header}>
-        <h1>{t('Issues')}</h1>
-        <p>
-          {t(
-            'Report a bug or suggest an idea to the Reviewer developers. It is published as an issue in {0} from your GitHub account, and replies show up here.',
-            list?.repository ?? 'free-solo-lab/free-solo-reviewer',
-          )}
-        </p>
+    <Dialog
+      className={cx('modal', styles.issuesDialog)}
+      dismissible={!form.sending}
+      // A typed report must not be lost to a stray click next to the window.
+      closeOnOutsideClick={!form.dirty}
+      onClose={onClose}
+    >
+      <header className={styles.issuesDialogHeader}>
+        <DialogTitle asChild>
+          <h2>{t('Report a problem')}</h2>
+        </DialogTitle>
+        <DialogClose asChild>
+          <IconButton icon="close" label={t('Close')} tooltip={false} disabled={form.sending} />
+        </DialogClose>
       </header>
-      <NewIssue login={list?.login} onCreated={setOpen} />
-      <h2 className={styles.sectionTitle}>
+      <p className={styles.muted}>
+        {t(
+          'Report a bug or suggest an idea to the Reviewer developers. It is published as an issue in {0} from your GitHub account, and replies show up here.',
+          list?.repository ?? 'free-solo-lab/free-solo-reviewer',
+        )}
+      </p>
+      <NewIssue login={list?.login} onCreated={setOpen} onState={setForm} />
+      <h3 className={styles.sectionTitle}>
         {t('Your issues')} {!!list?.issues.length && <span>{list.issues.length}</span>}
-      </h2>
+      </h3>
       {feedback.isPending ? (
         <p className={styles.muted} role="status">
           {t('Loading issues from GitHub…')}
@@ -69,11 +84,19 @@ export function IssuesSettings() {
         </ul>
       )}
       {open !== null && <IssueDrawer number={open} onClose={() => setOpen(null)} />}
-    </section>
+    </Dialog>
   );
 }
 
-function NewIssue({ login, onCreated }: { login?: string; onCreated: (number: number) => void }) {
+function NewIssue({
+  login,
+  onCreated,
+  onState,
+}: {
+  login?: string;
+  onCreated: (number: number) => void;
+  onState: (state: { dirty: boolean; sending: boolean }) => void;
+}) {
   const [kind, setKind] = useState<FeedbackKind>('bug'),
     [title, setTitle] = useState(''),
     [body, setBody] = useState(''),
@@ -81,6 +104,8 @@ function NewIssue({ login, onCreated }: { login?: string; onCreated: (number: nu
     [sending, setSending] = useState(false),
     [error, setError] = useState('');
   const ready = title.trim().length >= 3 && !!body.trim();
+  const dirty = !!(title.trim() || body.trim());
+  useEffect(() => onState({ dirty, sending }), [dirty, sending, onState]);
   async function send() {
     setSending(true);
     setError('');

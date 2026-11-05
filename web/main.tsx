@@ -15,6 +15,9 @@ import { queryClient } from './queries';
 import { TooltipProvider } from './ui/Tooltip';
 import { AppErrorBoundary, StartupFailure } from './Startup';
 import { isLanguage, setLanguage } from '../shared/i18n';
+import { captureClientErrors } from './client-log';
+
+captureClientErrors();
 
 /** The language is set before the interface loads, so every text renders in it at once. */
 async function start() {

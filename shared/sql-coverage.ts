@@ -1,6 +1,7 @@
 import type { DatabaseOperation, IndexedMethod, Snapshot, SourceIndex } from './model.js';
 import { isTestPath } from './test-coverage.js';
 import { affectedProductionMethods, onHead } from './analysis-scope.js';
+import { databaseCall } from './sequence.js';
 export const queryMethodName = (name: string) =>
   name
     .replace(/\([\s\S]*$/, '')
@@ -31,7 +32,7 @@ export function sqlMethods(snapshots: Snapshot[], indexes: SourceIndex[]): Index
       snapshot &&
       !isTestPath(ref.path) &&
       (ref.side === 'head' || !onHead(snapshot, ref.path)) &&
-      (!!method.callSites?.some((call) => call.database) ||
+      (!!method.callSites?.some(databaseCall) ||
         method.calls.some((call) =>
           /\b(?:jdbcTemplate|namedParameterJdbcTemplate|jdbc|entityManager)\.(?:query\w*|update|batchUpdate|execute|createNativeQuery|createQuery)\b/.test(
             call,

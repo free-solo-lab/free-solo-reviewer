@@ -1,5 +1,5 @@
 import type { Evidence, IndexedMethod, Scenario, Snapshot, SourceIndex } from './model.js';
-import { overlaps } from './sequence.js';
+import { databaseCall, databaseFile, overlaps } from './sequence.js';
 
 export interface SequenceModelLink {
   name: string;
@@ -49,8 +49,7 @@ export function databaseMethod(
     .filter(
       (method) =>
         step.evidence.some((ref) => overlaps(ref, method.evidence)) &&
-        (/(?:Repository|Repo|Dao|DAO)\.(kt|java)$/.test(method.evidence.path) ||
-          method.callSites?.some((call) => call.database)),
+        (databaseFile(method.evidence.path) || method.callSites?.some(databaseCall)),
     );
   const verb = step.label.match(/\b(SELECT|INSERT|UPDATE|DELETE|MERGE)\b/i)?.[1]?.toUpperCase();
   const names = new Set(step.label.match(/\b[\w$]+\b/g) ?? []);
@@ -70,7 +69,7 @@ export function databaseMethod(
     method.callSites?.some(
       (call) =>
         (!verb || sqlKinds[call.name] === verb) &&
-        call.database &&
+        databaseCall(call) &&
         step.evidence.some((ref) => overlaps(ref, call.evidence)),
     ),
   );
@@ -108,9 +107,7 @@ export function sequenceMethod(
   const queryMethods =
     step.kind === 'database'
       ? referenced.filter(
-          (method) =>
-            /(?:Repository|Repo|Dao|DAO)\.(kt|java)$/.test(method.evidence.path) ||
-            method.callSites?.some((call) => call.database),
+          (method) => databaseFile(method.evidence.path) || method.callSites?.some(databaseCall),
         )
       : [];
   const candidates = exact.length

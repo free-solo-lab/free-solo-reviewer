@@ -292,12 +292,12 @@ else {
         trusted(event);
         return updater.install();
       });
-      // Checked shortly after start and every six hours; installing waits for the button.
+      // Checked shortly after start and every 30 minutes; installing waits for the button.
       if (!smokeStartup) {
         void updater.cleanup().catch(() => {});
         const check = () => void updater.check();
         setTimeout(check, 15_000).unref();
-        setInterval(check, 6 * 60 * 60 * 1000).unref();
+        setInterval(check, 30 * 60 * 1000).unref();
       }
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([

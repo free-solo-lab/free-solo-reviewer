@@ -31,6 +31,7 @@ import { useCodeEditsWarning } from './workspace/SourcePanel';
 import { useMenuKeys } from './useMenuKeys';
 import { useStepSettings } from './queries';
 import { t } from '../shared/i18n';
+import { reviewSnapshotId } from '../shared/review-timeline';
 
 const pages: Record<Tab, () => ReactNode> = {
   overview: OverviewPage,
@@ -82,6 +83,9 @@ export function App() {
     scenarioView,
   } = workspace;
   const sqlPerMethod = !!useStepSettings().data?.onDemand.includes('sql');
+  // The diagram of a range comparison cites its read-only view; SQL belongs to the review itself.
+  const sqlSnapshot = sqlTarget && session?.snapshots.find((s) => s.id === sqlTarget.snapshotId);
+  const sqlReviewSnapshot = sqlSnapshot ? reviewSnapshotId(sqlSnapshot) : sqlTarget?.snapshotId;
   const Page = pages[tab];
   return (
     <WorkspaceContext.Provider value={workspace}>
@@ -160,7 +164,7 @@ export function App() {
             analysisKey={`${liveRun?.id}:${liveRun?.state}`}
             analyzing={liveRun?.state === 'running'}
             canGenerate={
-              sessionData.snapshots.some((snapshot) => snapshot.id === sqlTarget.snapshotId) &&
+              sessionData.snapshots.some((snapshot) => snapshot.id === sqlReviewSnapshot) &&
               !sqlComplete
             }
             perMethod={sqlPerMethod}

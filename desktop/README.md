@@ -36,7 +36,7 @@ Before distributing a build, also check the GUI: install through Finder, eject t
 
 ## Desktop diagnostics
 
-`desktop.log` is initialized before server startup in the Reviewer state folder. It records launch metadata, the window-ready event and sanitized failure details. At 5 MiB it rotates to `desktop.log.1`, retaining one previous copy. An unavailable log folder does not suppress the native error dialog. `server.log` remains the backend journal.
+`desktop.log` is initialized before server startup in the Reviewer state folder. It records launch metadata, the window-ready event and sanitized failure details. At 5 MiB it rotates to `desktop.log.1`, retaining one previous copy. An unavailable log folder does not suppress the native error dialog. `server.log` remains the backend journal: failed requests and commands, analysis failures, crashes and interface errors are written there too, and the **Logs** tab of the bottom panel shows them live together with `desktop.log`.
 
 Server startup failures, window load failures, renderer crashes and unhandled main-process errors use one native dialog with **Show logs**, **Copy diagnostics** and **Close**. An unexpected exit of an owned server also opens it; normal shutdown and separately started servers do not. The app menu exposes logs, diagnostic copying and **Show app in Finder**. Copied reports contain version, macOS version, architecture, application path, stage and error metadata. They exclude environment dumps, full logs, repository contents and credentials, and are never uploaded automatically. Every existing error report should be reviewed before sharing it externally.
 
@@ -61,7 +61,7 @@ The DMG is about 19% smaller. Most of the remaining size is the required Codex C
 
 The app updates itself from GitHub releases:
 
-1. Fifteen seconds after start and then every six hours it downloads `latest.json` from the latest release and checks its Ed25519 signature against the key in `desktop/update-public-key.ts`. Unsigned or altered manifests are rejected.
+1. Fifteen seconds after start and then every 30 minutes it downloads `latest.json` from the latest release and checks its Ed25519 signature against the key in `desktop/update-public-key.ts`. Unsigned or altered manifests are rejected.
 2. When the version is newer, it downloads `Reviewer-<version>-darwin-<arch>.zip` into `~/Library/Application Support/Reviewer/updates`, checks its size and SHA-256 from the signed manifest, unpacks it and checks the version inside.
 3. A banner and **Settings → About** offer **Restart and update**. The app quits (stopping a server it started), and `install.sh` waits for it, copies the database to `<data>/backups/before-<version>-<time>` for a minor or major release, swaps Reviewer.app, keeps the old copy in `updates/previous` and opens the new version, which removes the old copy on start. If the new app cannot be moved into place, the old one is put back and opened. The script's output is `updates/install.log`.
 

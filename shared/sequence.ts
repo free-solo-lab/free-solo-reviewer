@@ -1,4 +1,4 @@
-import type { AnalysisResult, Evidence, IndexedMethod, Scenario } from './model.js';
+import type { AnalysisResult, Evidence, IndexedCall, IndexedMethod, Scenario } from './model.js';
 import { t } from './i18n.js';
 
 const prefix = 'database:';
@@ -11,6 +11,16 @@ export const overlaps = (a: Evidence, b: Evidence) =>
   a.path === b.path &&
   a.startLine <= b.endLine &&
   b.startLine <= a.endLine;
+/** Data access classes, including the Impl of a DAO/repository interface. */
+export const databaseFile = (path: string) =>
+  /(?:Repository|Repo|Dao|DAO)(?:Impl)?\.(?:kt|java)$/.test(path);
+/**
+ * The indexer marks calls on a DSLContext variable; a context reached through a getter
+ * (`getDslContext().selectFrom(...)`, `dsl().update(...)`) starts a query as well.
+ */
+export const databaseCall = (call: IndexedCall) =>
+  call.database ||
+  /^(?:this\.)?(?:get)?(?:dsl|jooq)\w*(?:\(\))?$/i.test(call.receiver.replace(/\s+/g, ''));
 const stem = (path: string) =>
   path
     .split('/')
@@ -106,7 +116,7 @@ export function withDatabaseInteractions(
       method.callSites.forEach((call, index) => {
         const active = [...new Set([...scopes, ...call.transactionIds])];
         const location = `${key}:${index}:${active.join(',')}`;
-        if (Object.hasOwn(sqlVerbs, call.name) && (call.database || databaseCode(method))) {
+        if (Object.hasOwn(sqlVerbs, call.name) && (databaseCall(call) || databaseCode(method))) {
           offer({
             key: `${location}:${occurrence}`,
             label: `${sqlVerbs[call.name]} · ${stem(method.evidence.path)}.${method.name}`,

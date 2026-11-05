@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- A **Logs** tab next to Codex and Terminal shows the app's diagnostic journal live: failed API requests, failed `git`/`gh`/`codex` commands with their exit code and error output, analysis failures, server crashes and warnings, interface errors from the browser and the desktop app's launches. It filters by level, searches, copies the shown entries and counts new errors on the tab. Tokens and passwords are redacted, and the same entries now go to `server.log`.
+
+- Like on GitHub, the code view folds unchanged code more than three lines away from a change behind a `@@ … @@` bar. Its arrows reveal 20 lines towards the change below or above, or the whole gap when it is short; the bar at the start or end of a file offers one direction. Unchanged methods fold away with their headers; changed methods, comments, the selection and the opened line stay visible. Editing and a scenario's method view show every line.
+
+### Changed
+
+- **Report a problem…** moved from **Settings → Issues** to the user menu and opens as a popup with the report form and your issues with their replies; the new-reply badge moved there as well.
+- The desktop app checks for updates every 30 minutes instead of every six hours.
+
+### Fixed
+
+- A transaction frame on the interaction diagram stays open until the transactional method returns, including the queries of a DAO `Impl` injected through its interface, instead of breaking into several frames.
+- A query step on the diagram always opens the SQL window rather than the method code. Queries of `*DaoImpl` classes and jOOQ calls through `getDslContext()` are recognized, so SQL is generated for them, and the generate button is available in the range comparison view too.
+
 ## [0.2.1] — 2026-11-03
 
 Improved macOS application signing, startup diagnostics and shutdown reliability. No changes to the data format.

@@ -58,6 +58,7 @@ import { sessionListItem } from '../shared/session-list.js';
 import { ViewedMethods } from './viewed-methods.js';
 import { ViewedFiles } from './viewed-files.js';
 import { AppError, command, git } from './process.js';
+import { desktopLogEntries, errorDetails, systemLog } from './system-log.js';
 import {
   sessionSnapshots,
   type AnalysisRun,
@@ -177,6 +178,48 @@ export function createApp(
     instanceId: randomUUID(),
   };
   app.get('/api/runtime', async () => runtime);
+  // The diagnostic journal of the "Logs" tab: this server's entries and the desktop shell's.
+  app.get<{ Querystring: { after?: string } }>('/api/logs', async (req) => {
+    const after = Number(req.query.after ?? 0);
+    return {
+      entries: [...(after ? [] : await desktopLogEntries()), ...systemLog.list(after)].sort(
+        (a, b) => a.at.localeCompare(b.at) || a.seq - b.seq,
+      ),
+    };
+  });
+  app.delete('/api/logs', async () => {
+    systemLog.clear();
+    return { ok: true };
+  });
+  app.post('/api/logs/client', async (req) => {
+    const body = z
+      .object({
+        message: z.string().trim().min(1).max(2000),
+        details: z.string().max(8000).optional(),
+        level: z.enum(['warn', 'error']).default('error'),
+      })
+      .parse(req.body);
+    systemLog.add(body.level, 'client', body.message, body.details);
+    return { ok: true };
+  });
+  app.get('/api/logs/stream', async (_req, reply) => {
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (entry: unknown) => {
+      if (!reply.raw.destroyed) reply.raw.write(`data: ${JSON.stringify(entry)}\n\n`);
+    };
+    const unsubscribe = systemLog.subscribe(send);
+    const timer = setInterval(() => reply.raw.write(': heartbeat\n\n'), 15_000);
+    reply.raw.on('close', () => {
+      unsubscribe();
+      clearInterval(timer);
+    });
+  });
   const mutations = new Set<string>();
   const exclusive = async <T>(id: string, fn: () => Promise<T>): Promise<T> => {
     if (mutations.has(id))
@@ -227,7 +270,14 @@ export function createApp(
   app.addHook('onResponse', async (req, reply) => {
     if (req.headers.upgrade && reply.statusCode >= 400) req.raw.socket.destroy();
   });
-  app.setErrorHandler((error, _req, reply) => {
+  app.setErrorHandler((error, req, reply) => {
+    const status =
+      error instanceof z.ZodError ? 400 : error instanceof AppError ? error.status : 500;
+    // The path without its query: queries may carry file paths, never needed to diagnose.
+    const request = `${req.method} ${req.url.split('?')[0]} → ${status}`;
+    const message = error instanceof Error ? error.message : String(error);
+    if (status >= 500) systemLog.error('http', `${request}: ${message}`, errorDetails(error));
+    else systemLog.warn('http', `${request}: ${message}`);
     if (error instanceof z.ZodError)
       return reply
         .code(400)
