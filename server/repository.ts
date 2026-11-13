@@ -7,6 +7,7 @@ import { githubRemoteSlug, type GitHubGateway } from './github.js';
 import type {
   ChangedFile,
   Evidence,
+  PullRequest,
   Repository,
   RepositoryBranches,
   Snapshot,
@@ -87,6 +88,27 @@ export async function refreshRemoteBase(repo: Repository, baseRef: string) {
     'origin',
     `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
   ]);
+}
+/**
+ * The checkout holds unpublished work for this PR: it is on the PR branch, already contains the
+ * PR head (so it cannot roll back newer GitHub commits), and its files differ from the snapshot.
+ */
+export async function unpublishedPullRequestChanges(
+  repo: Repository,
+  pr: Pick<PullRequest, 'headRefName' | 'headRefOid'>,
+  snapshot: Pick<Snapshot, 'contentHash'>,
+) {
+  if (repo.slug.startsWith('local/')) return false;
+  const branch = (
+    await git(repo.path, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')
+  ).trim();
+  if (branch !== pr.headRefName) return false;
+  const contains = await git(repo.path, ['merge-base', '--is-ancestor', pr.headRefOid, 'HEAD'])
+    .then(() => true)
+    .catch(() => false);
+  return (
+    contains && contentFingerprint((await workingSources(repo)).sources) !== snapshot.contentHash
+  );
 }
 export const isSha = (s: string) => /^[a-f0-9]{40,64}$/.test(s);
 const allowed =
