@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-20
+
+A minor release: the PR discussion grouped by GitHub review, approvals from GitHub on the review timeline, merged and closed PRs in the list, one viewed mark for a whole scenario, and a PR review that opens on the PR branch. No changes to the data format.
+
+### Added
+
+- The **Comments** page groups the discussion by GitHub review, newest first: each round shows its number, author, date, the commit it was written on (marked when it is the current version) and the approval or change request sent with it. Comments outside reviews come last as the PR conversation.
+- Approvals and change requests made on GitHub, by any reviewer, mark the version they were made on in the review timeline, and the top bar names who approved the PR, also after it is merged or closed.
+- Reviews of merged or closed PRs are shown as **PR merged** or **PR closed** in the review list.
+- **Scenario code** has a **Scenario viewed** mark that marks every method shown as viewed at once, with a counter of viewed methods.
+- Creating a PR review switches the working folder to the PR branch at the reviewed commit, creating the local branch if needed. Uncommitted changes or a diverged local branch keep the folder as it is and leave a warning in **Logs**. Refresh picks up uncommitted edits on the checked-out PR branch as the PR's working code.
+
+### Fixed
+
+- Review drafts follow their files to new commits from GitHub or a Codex fix instead of being saved to the replaced version; unsaved edits of drafts that did not move are kept.
+- After a refresh that starts a follow-up analysis, the review shows the running analysis right away and the notice says it has started.
+- Reviews with only line comments no longer show Reviewer's hidden marker as an empty summary.
+- Opening an older review version no longer recomputes scenario and test comparisons on every render.
+
 ## [0.3.0] — 2026-11-05
 
 A minor release: a live log of the app's errors, GitHub-style folding of unchanged code and fixes to transactions and SQL on the interaction diagram. No changes to the data format.
@@ -128,7 +147,8 @@ The first public alpha. Features, the data format and settings may still change.
 - Replies and reactions for every reviewer comment on the **Comments** page: line comments, conversation comments and review summaries.
 - Secret scanning and `shellcheck` in CI; issue and pull request templates.
 
-[Unreleased]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/free-solo-lab/free-solo-reviewer/compare/v0.1.3...v0.2.0
