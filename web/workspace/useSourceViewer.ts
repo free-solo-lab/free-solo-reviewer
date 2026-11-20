@@ -216,12 +216,16 @@ export function useSourceViewer({
     });
   }
   const sourceSelection = source?.selection ?? source?.evidence;
-  const sourceContext =
-    source?.versionId === (reviewVersion?.id ?? 'current')
-      ? session
-      : source?.versionId === 'current'
-        ? sessionData
-        : (reviewContext(sessionData, source?.versionId ?? '') ?? session);
+  // Review checkpoints build a new context on every lookup; code links are memoized on it.
+  const sourceContext = useMemo(
+    () =>
+      source?.versionId === (reviewVersion?.id ?? 'current')
+        ? session
+        : source?.versionId === 'current'
+          ? sessionData
+          : (reviewContext(sessionData, source?.versionId ?? '') ?? session),
+    [source?.versionId, reviewVersion?.id, session, sessionData],
+  );
   const sourceSnapshot = sourceContext?.snapshots.find(
     (snapshot) => snapshot.repoId === source?.evidence.repoId,
   );
@@ -255,9 +259,9 @@ export function useSourceViewer({
           allDrafts,
         )
       : [];
-  const sourcePreviousRevision = reviewContext(
-    sessionData,
-    source?.comparison?.previousRevisionId ?? '',
+  const sourcePreviousRevision = useMemo(
+    () => reviewContext(sessionData, source?.comparison?.previousRevisionId ?? ''),
+    [sessionData, source?.comparison?.previousRevisionId],
   );
   const sourcePreviousSnapshot = sourcePreviousRevision?.snapshots.find(
     (snapshot) => snapshot.id === source?.comparison?.previousSnapshotId,

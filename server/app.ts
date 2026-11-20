@@ -44,6 +44,7 @@ import {
   changedFiles,
   workingSources,
   snapshotContent,
+  unpublishedPullRequestChanges,
 } from './repository.js';
 import { archiveReview } from './revisions.js';
 import { sqlPreview } from './sql-preview.js';
@@ -808,6 +809,22 @@ export function createApp(
       run: null,
     };
     store.saveSession(s);
+    // The working folder follows the reviewed PR, so its code can be run and edited right away.
+    // Switching never discards work: uncommitted changes or a diverged local branch keep the
+    // folder as it is, and the code panel still offers to switch later.
+    for (const snapshot of snapshots) {
+      if (!snapshot.pr) continue;
+      const repo = store.repository(snapshot.repoId);
+      if (!repo) continue;
+      try {
+        await checkoutPullRequest(repo, snapshot);
+      } catch (error) {
+        systemLog.warn(
+          'command',
+          `${repo.name}: ${t('Could not switch to branch {0}: {1}', snapshot.pr.headRefName, errorMessage(error))}`,
+        );
+      }
+    }
     return s;
   });
   const upgrades = new Map<string, Promise<ReviewSession>>();
@@ -956,7 +973,12 @@ export function createApp(
       }
       const localBase = localBases?.[item.repoId] ?? item.local?.baseRef;
       if (item.local) await refreshRemoteBase(repo, localBase!);
-      if (pr && (workingRepoId === item.repoId || item.working)) {
+      if (
+        pr &&
+        (workingRepoId === item.repoId ||
+          item.working ||
+          (await unpublishedPullRequestChanges(repo, pr, item)))
+      ) {
         if (
           workingRepoId === item.repoId &&
           !item.working &&
@@ -1077,8 +1099,8 @@ export function createApp(
       }
       store.saveSession(old);
       if (analyze && workingRepoId && !old.run && old.update?.changes.some((c) => c.files.length))
-        return analysis.start(old);
-      return old;
+        analysis.start(old);
+      return session(old.id);
     }
     // Each repository may act as its own account; comments by any of them are ours.
     const logins = discussion.length
@@ -1215,8 +1237,9 @@ export function createApp(
       });
     }
     store.saveReviewUpdate(old, carriedDrafts);
-    if (analyze) return analysis.start(old);
-    return old;
+    // The client reloads the review from this response, already showing the analysis it started.
+    if (analyze) analysis.start(old);
+    return session(old.id);
   }
   app.post<{ Params: { id: string } }>('/api/sessions/:id/refresh', async (req) =>
     exclusive(req.params.id, () => refreshSession(req.params.id, req.body)),

@@ -207,6 +207,9 @@
 .sessionState.approved {
   color: #2f8a57;
 }
+.sessionState.merged {
+  color: #8250df;
+}
 .sessionState.attention {
   color: var(--orange);
 }

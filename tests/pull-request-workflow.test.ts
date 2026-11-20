@@ -4,7 +4,7 @@ import { writeFile, readFile } from 'node:fs/promises';
 import { fixture } from './fixtures';
 import { reviewPoints } from '../shared/review-timeline';
 import { createApp } from '../server/app';
-import { createLocalSnapshot } from '../server/repository';
+import { createLocalSnapshot, readSource } from '../server/repository';
 import { git } from '../server/process';
 import { recordReviewCheckpoint } from '../shared/review-workflow';
 import { emptyModelResult, type PullRequest, type ReviewSession } from '../shared/model';
@@ -232,4 +232,88 @@ it('publishes an unpublished fix to the same PR without another analysis or anot
       await git(f.repo.path, ['show', `${store.pullRequestPreview(preview.id)!.commit}:fixed.txt`])
     ).trim(),
   ).toBe('Reviewed fix');
+});
+it('reviews uncommitted edits on the checked-out PR branch, but not edits on another branch', async () => {
+  const f = await fixture();
+  cleanup.push(f.cleanup);
+  const analyze = vi.fn();
+  const { app, store } = createApp({
+    dataDir: join(f.root, 'pr-working'),
+    github: f.github,
+    provider: { id: 'never', analyze },
+  });
+  cleanup.push(() => app.close());
+  store.saveRepository(f.repo);
+  const { createSnapshot } = await import('../server/repository');
+  const native = await createSnapshot(f.repo, 12, join(f.root, 'snapshots'), f.github);
+  store.saveSession({
+    id: 'pr',
+    title: 'PR',
+    createdAt: '2026-01-01',
+    snapshots: [native],
+    run: null,
+  });
+  const refresh = async () => {
+    const result = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/pr/refresh',
+      payload: { analyze: false },
+    });
+    expect(result.statusCode, result.body).toBe(200);
+    return store.session('pr')!;
+  };
+  const service = join(f.repo.path, 'src/main/java/example/OrderService.java');
+  const original = await readFile(service, 'utf8');
+  // Another branch's edits are not the PR's code.
+  await writeFile(service, original.replace('return order;', 'return null;'));
+  expect((await refresh()).snapshots[0].working).toBeUndefined();
+  await writeFile(service, original);
+  await git(f.repo.path, ['checkout', '-b', f.pr.headRefName]);
+  // A clean PR branch keeps the reviewed snapshot as it is.
+  expect((await refresh()).snapshots[0].id).toBe(native.id);
+  await writeFile(service, original.replace('return order;', 'return null;'));
+  const updated = await refresh();
+  expect(updated.snapshots[0].pr?.number).toBe(12);
+  expect(updated.snapshots[0].working?.branchName).toBe(f.pr.headRefName);
+  expect(updated.snapshots[0].contentHash).not.toBe(native.contentHash);
+  expect(
+    await readSource(updated.snapshots[0], {
+      side: 'head',
+      path: 'src/main/java/example/OrderService.java',
+    }),
+  ).toContain('return null;');
+  expect(analyze).not.toHaveBeenCalled();
+});
+it('switches the working folder to the PR branch when a PR review is created, but keeps uncommitted work', async () => {
+  const f = await fixture();
+  cleanup.push(f.cleanup);
+  const { app, store } = createApp({
+    dataDir: join(f.root, 'pr-switch'),
+    github: f.github,
+    provider: { id: 'never', analyze: vi.fn() },
+  });
+  cleanup.push(() => app.close());
+  store.saveRepository(f.repo);
+  const branch = async () =>
+    (await git(f.repo.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+  const create = async () => {
+    const result = await app.inject({
+      method: 'POST',
+      url: '/api/sessions',
+      payload: { title: 'PR', repositories: [{ repoId: f.repo.id, prNumber: 12 }] },
+    });
+    expect(result.statusCode, result.body).toBe(200);
+  };
+  // The folder sits on another branch that does not contain the PR yet.
+  await git(f.repo.path, ['reset', '--hard', f.pr.baseRefOid]);
+  const service = join(f.repo.path, 'src/main/java/example/OrderService.java');
+  const original = await readFile(service, 'utf8');
+  await writeFile(service, `${original}\n// local work\n`);
+  await create();
+  expect(await branch()).toBe('main');
+  expect(await readFile(service, 'utf8')).toContain('// local work');
+  await writeFile(service, original);
+  await create();
+  expect(await branch()).toBe(f.pr.headRefName);
+  expect((await git(f.repo.path, ['rev-parse', 'HEAD'])).trim()).toBe(f.pr.headRefOid);
 });

@@ -30,7 +30,9 @@ export function useAnalysisViews({
   result: AnalysisResult | undefined;
   liveRun: AnalysisRun | null | undefined;
 }) {
-  const comparisonRevision = comparisonReview(sessionData);
+  // A review sent on GitHub is a checkpoint: its revision is a new object on every lookup, which
+  // would recompute the scenario and test comparisons below on every render.
+  const comparisonRevision = useMemo(() => comparisonReview(sessionData), [sessionData]);
   const scenarioUpdates = useMemo(
     () =>
       comparisonRevision && sessionData?.run

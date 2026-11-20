@@ -79,3 +79,30 @@ export function restoreDrafts(
     return { drafts: remote, recovered: false };
   }
 }
+
+/** Drafts of the snapshots under review; a replaced snapshot's draft lives on its successor. */
+export function currentDrafts(drafts: ReviewDraft[], snapshotIds: Iterable<string>) {
+  const ids = new Set(snapshotIds);
+  return drafts.filter((draft) => ids.has(draft.snapshotId));
+}
+/**
+ * Server drafts after the reviewed code moved to new snapshots. Drafts of a snapshot that did
+ * not move keep their unsaved local edits.
+ */
+export function resyncDrafts(local: ReviewDraft[], remote: ReviewDraft[]) {
+  let kept = false;
+  const drafts = remote.map((draft) => {
+    const edited = local.find(
+      (item) =>
+        draft.state === 'draft' &&
+        item.state === 'draft' &&
+        item.snapshotId === draft.snapshotId &&
+        item.headSha === draft.headSha &&
+        item.round === draft.round,
+    );
+    if (!edited) return draft;
+    kept = true;
+    return edited;
+  });
+  return { drafts, kept };
+}

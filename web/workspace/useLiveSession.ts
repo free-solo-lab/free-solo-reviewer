@@ -104,9 +104,11 @@ export function useLiveSession(
     if (comparison.error) setError(comparison.error.message);
   }, [comparison.error]);
   const rangeComparison = comparison.data;
-  const previous = rangeComparison
-    ? reviewRevisionForPoint(sessionData, rangeComparison.from)
-    : undefined;
+  // A checkpoint's revision is a new object on every lookup; keep it stable for the memos below.
+  const previous = useMemo(
+    () => (rangeComparison ? reviewRevisionForPoint(sessionData, rangeComparison.from) : undefined),
+    [sessionData, rangeComparison],
+  );
   const baselineResult = (
     previous ??
     sessionData?.history?.find((r) =>

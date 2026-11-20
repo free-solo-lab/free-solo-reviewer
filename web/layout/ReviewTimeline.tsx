@@ -92,9 +92,16 @@ export function ReviewTimeline({
         : points[i]?.kind === 'review'
           ? t('Review {0}', i)
           : t('Analysis {0}', i);
+  /** Reviewers who decided on exactly this version on GitHub, e.g. "@lead". */
+  const onGitHub = (p: ReviewPoint, state: 'approved' | 'changes_requested') =>
+    (p.reviewers ?? [])
+      .filter((review) => review.state === state)
+      .map((review) => `@${review.author}`)
+      .join(', ');
   // An approval of older code no longer covers what is reviewed now.
   const stale =
     points[last]?.decision !== 'APPROVE' &&
+    !onGitHub(points[last], 'approved') &&
     points.slice(0, last).findLast((p) => p.decision && p.decision !== 'COMMENT')?.decision ===
       'APPROVE';
   const mark = (p: ReviewPoint, i: number) =>
@@ -106,19 +113,31 @@ export function ReviewTimeline({
             icon: 'close' as const,
             hint: t('You requested changes on this version'),
           }
-        : i === last && stale && !p.decision
+        : onGitHub(p, 'changes_requested')
           ? {
-              tone: 'stale',
-              icon: 'refresh' as const,
-              hint: t('The code changed after your approval'),
+              tone: 'changes',
+              icon: 'close' as const,
+              hint: t('Changes requested on GitHub: {0}', onGitHub(p, 'changes_requested')),
             }
-          : p.decision === 'COMMENT'
+          : onGitHub(p, 'approved')
             ? {
-                tone: 'comment',
-                icon: 'message' as const,
-                hint: t('You sent comments on this version'),
+                tone: 'approved',
+                icon: 'check' as const,
+                hint: t('Approved on GitHub: {0}', onGitHub(p, 'approved')),
               }
-            : undefined;
+            : i === last && stale && !p.decision
+              ? {
+                  tone: 'stale',
+                  icon: 'refresh' as const,
+                  hint: t('The code changed after your approval'),
+                }
+              : p.decision === 'COMMENT'
+                ? {
+                    tone: 'comment',
+                    icon: 'message' as const,
+                    hint: t('You sent comments on this version'),
+                  }
+                : undefined;
   const marks = points.map(mark);
   if (last < 1) return null;
   return (

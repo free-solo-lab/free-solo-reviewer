@@ -19,6 +19,51 @@ async function waitFor(fn: () => boolean) {
   throw new Error('Analysis did not finish');
 }
 describe('incremental review revisions', () => {
+  it('answers a refresh that starts the follow-up analysis with the review itself', async () => {
+    const f = await fixture();
+    cleanup.push(f.cleanup);
+    const { app, store } = createApp({
+      dataDir: join(f.root, 'app'),
+      github: f.github,
+      provider: new FixtureProvider(),
+    });
+    cleanup.push(() => app.close());
+    store.saveRepository(f.repo);
+    const request = (url: string, payload: unknown) =>
+      app.inject({
+        method: 'POST',
+        url,
+        headers: { host: '127.0.0.1:4318', 'content-type': 'application/json' },
+        payload: JSON.stringify(payload),
+      });
+    const session = (
+      await request('/api/sessions', {
+        title: 'Refresh',
+        repositories: [{ repoId: f.repo.id, prNumber: 12 }],
+      })
+    ).json<ReviewSession>();
+    await request(`/api/sessions/${session.id}/analyze`, {});
+    await waitFor(() => store.session(session.id)?.run?.state === 'complete');
+    const path = 'src/main/java/example/OrderService.java';
+    const code = await readFile(join(f.repo.path, path), 'utf8');
+    await writeFile(
+      join(f.repo.path, path),
+      code.replace('    paymentClient.charge(order.id);\n', ''),
+    );
+    await git(f.repo.path, ['commit', '-am', 'Remove synchronous payment']);
+    const sha = (await git(f.repo.path, ['rev-parse', 'HEAD'])).trim();
+    await git(f.repo.path, ['push', '--force', 'origin', `${sha}:refs/pull/12/head`]);
+    f.github.pr = { ...f.pr, headRefOid: sha };
+    const response = await request(`/api/sessions/${session.id}/refresh`, { analyze: true });
+    expect(response.statusCode, response.body).toBe(200);
+    // The client matches the response to the open review; a bare run left the screen stale.
+    const refreshed = response.json<ReviewSession>();
+    expect(refreshed.id).toBe(session.id);
+    expect(refreshed.snapshots[0].headSha).toBe(sha);
+    expect(refreshed.update?.changes[0].files.map((file) => file.path)).toEqual([path]);
+    expect(refreshed.run?.state).toBe('running');
+    await waitFor(() => store.session(session.id)?.run?.state !== 'running');
+  });
   it('retains the pinned review, reads old code, and passes only post-review changes and replies to the follow-up', async () => {
     const f = await fixture();
     cleanup.push(f.cleanup);
