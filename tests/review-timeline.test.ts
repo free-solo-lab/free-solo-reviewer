@@ -186,6 +186,49 @@ describe('review comparison timeline', () => {
     expect([...html.matchAll(/data-tone="([a-z]+)"/g)].map((m) => m[1])).toEqual(['comment']);
     expect(html).toContain('Вы отправили комментарии к этой версии');
   });
+  it('marks a version approved or sent back on GitHub, by whoever did it, on its commit', () => {
+    const session = makeSession([revision('first')]);
+    session.workflow = {
+      version: 1,
+      initial: { at: session.createdAt, snapshots: session.snapshots },
+      versions: [],
+      checkpoints: [],
+      remote: [
+        {
+          repoId: 'repo',
+          number: 61,
+          headSha: 'latest',
+          state: 'merged',
+          decision: 'review_required',
+          at: '',
+          reviews: [
+            { author: 'lead', state: 'approved', at: '', commitId: 'latest' },
+            { author: 'qa', state: 'changes_requested', at: '', commitId: 'first' },
+          ],
+        },
+      ],
+    };
+    const points = reviewPoints(session);
+    expect(points.map((p) => p.reviewers?.map((r) => r.author))).toEqual([
+      undefined,
+      ['qa'],
+      ['lead'],
+    ]);
+    const selected = selectedReviewRange(session);
+    const html = renderToStaticMarkup(
+      React.createElement(ReviewTimeline, {
+        points: selected.points,
+        from: selected.from.id,
+        onChange: async () => {},
+      }),
+    );
+    expect([...html.matchAll(/data-tone="([a-z]+)"/g)].map((m) => m[1])).toEqual([
+      'changes',
+      'approved',
+    ]);
+    expect(html).toContain('Одобрено на GitHub: @lead');
+    expect(html).toContain('Изменения запрошены на GitHub: @qa');
+  });
   it('renders one movable boundary with names above the track and dates below, with no version dropdown', () => {
     const selected = selectedReviewRange(makeSession([revision('first')]));
     const html = renderToStaticMarkup(

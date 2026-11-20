@@ -5,6 +5,7 @@ import { loadNavigationIndex } from '../sessions';
 import { WorkspaceContext, useWorkspace } from '../workspace/state';
 import { useSourceViewer } from '../workspace/useSourceViewer';
 import { SourcePanel } from '../workspace/SourcePanel';
+import { useViewedMethodGroup } from '../useViewedMethods';
 import styles from './ScenarioCode.module.css';
 import { errorMessage } from '../../shared/errors';
 import { t } from '../../shared/i18n';
@@ -30,6 +31,7 @@ export function ScenarioCode({
         current={current}
         loading={t('Loading the scenario code…')}
         empty={t('This PR version has no code changes in the selected scenario.')}
+        viewedLabel={t('Scenario viewed')}
       />
     </section>
   );
@@ -45,6 +47,7 @@ export function CodeFlow({
   current = false,
   loading,
   empty,
+  viewedLabel,
 }: {
   entries: (snapshots: Snapshot[], indexes: SourceIndex[]) => ScenarioCodeEntry[];
   /** The item the fragments belong to; they are selected again when it changes. */
@@ -52,6 +55,8 @@ export function CodeFlow({
   current?: boolean;
   loading: string;
   empty: string;
+  /** Adds one mark for every method shown, so they need not be marked one by one. */
+  viewedLabel?: string;
 }) {
   const workspace = useWorkspace();
   const session = current ? workspace.sessionData : workspace.session;
@@ -89,12 +94,47 @@ export function CodeFlow({
     () => (indexes ? select(session?.snapshots ?? [], indexes) : []),
     [dependency, indexes, version],
   );
+  const viewTargets = useMemo(
+    () =>
+      entries.flatMap((entry) => {
+        const snapshot = session?.snapshots.find((item) => item.repoId === entry.evidence.repoId);
+        // Removed-only methods of a comparison open in the saved review; they keep their own mark.
+        return snapshot && !(entry.evidence.side === 'base' && snapshot.reviewBase)
+          ? [{ snapshot, evidence: entry.evidence }]
+          : [];
+      }),
+    [entries, session?.snapshots],
+  );
+  const group = useViewedMethodGroup(
+    viewedLabel ? workspace.sessionData?.id : undefined,
+    viewTargets,
+  );
   return (
     <div className={styles.flow}>
       {!indexes ? (
         <p className={styles.empty}>{loading}</p>
       ) : (
         <>
+          {viewedLabel && group.total > 0 && (
+            <div className={styles.viewedAll}>
+              <label className="source-method-viewed">
+                <input
+                  type="checkbox"
+                  checked={group.viewed === group.total}
+                  ref={(input) => {
+                    if (input) input.indeterminate = group.viewed > 0 && group.viewed < group.total;
+                  }}
+                  disabled={group.saving || group.loading}
+                  onChange={(event) => void group.setViewed(event.target.checked)}
+                />
+                {viewedLabel}
+              </label>
+              <span className={styles.viewedCount}>
+                {group.viewed}/{group.total}
+              </span>
+              {group.error && <span role="alert">{group.error}</span>}
+            </div>
+          )}
           {loaded?.errors.map((error) => (
             <p role="alert" className={styles.empty} key={error}>
               {error}

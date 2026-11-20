@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { ReviewDraft, ReviewRevision, ReviewSession } from '../../shared/model';
 import { api } from '../api';
-import { cacheDrafts, clearDraftCache, restoreDrafts, DraftSaveQueue } from '../draft-cache';
+import {
+  cacheDrafts,
+  clearDraftCache,
+  currentDrafts,
+  restoreDrafts,
+  resyncDrafts,
+  DraftSaveQueue,
+} from '../draft-cache';
 import { t } from '../../shared/i18n';
 
 /** Review drafts of the open session, saved shortly after each change and backed up locally. */
@@ -22,6 +29,35 @@ export function useDrafts({
   draftsRef.current = drafts;
   const draftRevision = useRef(0);
   const draftSaveQueue = useRef(new DraftSaveQueue());
+  const snapshotKey = sessionData?.snapshots.map((snapshot) => snapshot.id).join(',') ?? '';
+  // Read at save time: a save started from an older render must not use replaced snapshots.
+  const snapshotIds = useRef<string[]>([]);
+  snapshotIds.current = snapshotKey ? snapshotKey.split(',') : [];
+  // New commits (from GitHub or a Codex fix) replace the snapshots and the server moves their
+  // drafts along; drafts of the replaced snapshots are reloaded instead of saved to them.
+  useEffect(() => {
+    if (!sessionData) return;
+    const id = sessionData.id;
+    if (currentDrafts(draftsRef.current, snapshotIds.current).length === draftsRef.current.length)
+      return;
+    let active = true;
+    const replace = (next: ReviewDraft[], keepDirty: boolean) => {
+      if (!active || liveSession.current !== id) return;
+      draftRevision.current++;
+      draftsRef.current = next;
+      setDrafts(next);
+      setDirty((value) => value && keepDirty);
+    };
+    api<ReviewDraft[]>(`/sessions/${id}/drafts`)
+      .then((remote) => {
+        const { drafts: next, kept } = resyncDrafts(draftsRef.current, remote);
+        replace(next, kept);
+      })
+      .catch(() => replace(currentDrafts(draftsRef.current, snapshotIds.current), true));
+    return () => {
+      active = false;
+    };
+  }, [sessionData?.id, snapshotKey]);
   useEffect(() => {
     const listener = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
@@ -45,7 +81,7 @@ export function useDrafts({
       revision = draftRevision.current;
     return draftSaveQueue.current.enqueue(async () => {
       const saved: ReviewDraft[] = [];
-      for (const draft of values) {
+      for (const draft of currentDrafts(values, snapshotIds.current)) {
         saved.push(
           draft.state === 'draft'
             ? await api<ReviewDraft>(`/sessions/${id}/drafts/${draft.snapshotId}`, 'PUT', draft)

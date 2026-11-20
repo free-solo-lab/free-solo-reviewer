@@ -1,7 +1,14 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { cacheDrafts, clearDraftCache, DraftSaveQueue, restoreDrafts } from '../web/draft-cache';
+import {
+  cacheDrafts,
+  clearDraftCache,
+  currentDrafts,
+  DraftSaveQueue,
+  restoreDrafts,
+  resyncDrafts,
+} from '../web/draft-cache';
 import { commentsAtLine } from '../shared/review-comments';
 import { Diff, SourceCode } from '../web/components';
 import type { ChangedFile, Evidence, ReviewDraft } from '../shared/model';
@@ -119,6 +126,32 @@ describe('durable local review comments', () => {
     await failure;
     expect(await second).toEqual(added);
     expect(events).toEqual(['older', 'newer']);
+  });
+});
+
+describe('drafts after new commits replace the reviewed snapshot', () => {
+  const replaced = { ...added, snapshotId: 'review-1', headSha: 'old' };
+  const moved = { ...added, snapshotId: 'current', headSha: 'new' };
+  it('never saves the draft of a snapshot that is no longer under review', () => {
+    expect(currentDrafts([replaced, moved], ['current'])).toEqual([moved]);
+    expect(currentDrafts([replaced], [])).toEqual([]);
+  });
+  it('takes the moved drafts from the server and keeps unsaved edits of unmoved ones', () => {
+    const edited = { ...draft, snapshotId: 'other', comments: added.comments };
+    const server = { ...draft, snapshotId: 'other' };
+    expect(resyncDrafts([replaced, edited], [moved, server])).toEqual({
+      drafts: [moved, edited],
+      kept: true,
+    });
+    expect(resyncDrafts([replaced], [moved])).toEqual({ drafts: [moved], kept: false });
+  });
+  it('does not keep a local copy of another commit or a sent review', () => {
+    const remote = { ...draft, snapshotId: 'other' };
+    for (const local of [
+      { ...added, snapshotId: 'other', headSha: 'old' },
+      { ...added, snapshotId: 'other', state: 'submitted' as const },
+    ])
+      expect(resyncDrafts([local], [remote])).toEqual({ drafts: [remote], kept: false });
   });
 });
 

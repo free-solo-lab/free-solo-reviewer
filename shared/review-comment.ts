@@ -1,4 +1,5 @@
 import { withoutRecheckMarker, type FixCompletion } from './fix-chat.js';
+import { reviewSummaryText } from './discussion-rounds.js';
 import type { DraftComment, Evidence, ReviewSession } from './model.js';
 
 export interface CommentActivity {
@@ -25,7 +26,7 @@ export interface CommentStep {
 
 /** A compact excerpt, never a replacement for the author's saved comment. */
 export function commentTitle(body: string) {
-  const text = withoutRecheckMarker(body)
+  const text = withoutRecheckMarker(reviewSummaryText(body))
     .replace(/\s+/g, ' ')
     .replace(/^[-*#>]+\s*/, '')
     .trim();

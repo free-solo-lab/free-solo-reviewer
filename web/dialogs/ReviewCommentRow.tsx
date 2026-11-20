@@ -35,7 +35,7 @@ const shortActions: Partial<Record<CommentStep['action'], string>> = {
   review: t('in the review'),
 };
 /** A short moment for a row: the year only when it is not the current one. */
-function when(at: string) {
+export function when(at: string) {
   const date = new Date(at);
   return date.toLocaleString(getLanguage(), {
     day: 'numeric',

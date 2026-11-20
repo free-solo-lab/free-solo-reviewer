@@ -6,6 +6,8 @@ export type SessionReviewState =
   | 'ready'
   | 'sent'
   | 'approved'
+  | 'merged'
+  | 'closed'
   | 'review-again'
   | 'local-sent'
   | 'running'
@@ -50,24 +52,34 @@ export function sessionListItem(session: ReviewSession): SessionListItem {
       ) === 'APPROVE',
   );
   const state = session.run?.state ?? 'ready';
+  // A PR merged or closed on GitHub is finished, whatever was reviewed here.
+  const remote = targets
+    .filter((snapshot) => snapshot.pr)
+    .map((snapshot) => session.workflow?.remote?.find((r) => r.repoId === snapshot.repoId)?.state);
+  const finished =
+    remote.length > 0 && remote.every((value) => value === 'merged' || value === 'closed');
   const reviewState: SessionReviewState =
     state === 'running'
       ? 'running'
-      : approved.length && approved.every(Boolean)
-        ? 'approved'
-        : approvalLost
-          ? 'review-again'
-          : reviewed.length && reviewed.every(Boolean)
-            ? reviewed.some((checkpoint) => checkpoint?.kind === 'github')
-              ? 'sent'
-              : 'local-sent'
-            : !session.run
-              ? 'new'
-              : state === 'complete'
-                ? 'ready'
-                : state === 'ready'
-                  ? 'new'
-                  : state;
+      : finished
+        ? remote.includes('merged')
+          ? 'merged'
+          : 'closed'
+        : approved.length && approved.every(Boolean)
+          ? 'approved'
+          : approvalLost
+            ? 'review-again'
+            : reviewed.length && reviewed.every(Boolean)
+              ? reviewed.some((checkpoint) => checkpoint?.kind === 'github')
+                ? 'sent'
+                : 'local-sent'
+              : !session.run
+                ? 'new'
+                : state === 'complete'
+                  ? 'ready'
+                  : state === 'ready'
+                    ? 'new'
+                    : state;
   return {
     id: session.id,
     title: session.title,

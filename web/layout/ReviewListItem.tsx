@@ -10,6 +10,8 @@ const states: Record<SessionReviewState, { icon: IconName; label: string; tone: 
   ready: { icon: 'circleCheck', label: t('Analysis ready'), tone: 'analyzed' },
   sent: { icon: 'send', label: t('Review sent'), tone: 'sent' },
   approved: { icon: 'check', label: t('You approved the current version'), tone: 'approved' },
+  merged: { icon: 'pullRequest', label: t('PR merged'), tone: 'merged' },
+  closed: { icon: 'circleSlash', label: t('PR closed'), tone: 'neutral' },
   'review-again': {
     icon: 'refresh',
     label: t('The code changed after your approval'),

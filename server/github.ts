@@ -12,6 +12,7 @@ import type {
   ReviewRequest,
 } from '../shared/model.js';
 import { t } from '../shared/i18n.js';
+import type { RemoteReviewDecision } from '../shared/review-workflow.js';
 export interface RemoteReview {
   id: number;
   html_url: string;
@@ -28,6 +29,7 @@ export interface GitHubGateway {
     state: 'open' | 'closed' | 'merged';
     headSha: string;
     decision: 'approved' | 'changes_requested' | 'review_required' | 'unknown';
+    reviews?: RemoteReviewDecision[];
   }>;
   findPullRequest?(slug: string, branch: string, base?: string): Promise<PullRequest | undefined>;
   createPullRequest?(
@@ -313,7 +315,20 @@ export class GitHub implements GitHubGateway {
     const result = await this.api<{
       data: {
         repository: {
-          pullRequest: { state: string; reviewDecision: string | null; headRefOid: string };
+          pullRequest: {
+            state: string;
+            reviewDecision: string | null;
+            headRefOid: string;
+            latestOpinionatedReviews?: {
+              nodes: ({
+                databaseId: number | null;
+                state: string;
+                submittedAt: string | null;
+                author: { login: string } | null;
+                commit: { oid: string } | null;
+              } | null)[];
+            };
+          };
         };
       };
       errors?: { message: string }[];
@@ -323,7 +338,7 @@ export class GitHub implements GitHubGateway {
         method: 'POST',
         body: {
           query:
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){state reviewDecision headRefOid}}}',
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){state reviewDecision headRefOid latestOpinionatedReviews(first:50){nodes{databaseId state submittedAt author{login} commit{oid}}}}}}',
           variables: { owner, name, number },
         },
       },
@@ -348,6 +363,21 @@ export class GitHub implements GitHubGateway {
             : p.reviewDecision === 'REVIEW_REQUIRED'
               ? ('review_required' as const)
               : ('unknown' as const),
+      // An approval with no text is still a decision; the discussion keeps only reviews with text.
+      reviews: (p.latestOpinionatedReviews?.nodes ?? []).flatMap(
+        (review): RemoteReviewDecision[] =>
+          review && (review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED')
+            ? [
+                {
+                  ...(review.databaseId ? { id: review.databaseId } : {}),
+                  author: review.author?.login ?? '',
+                  state: review.state === 'APPROVED' ? 'approved' : 'changes_requested',
+                  at: review.submittedAt ?? '',
+                  ...(review.commit ? { commitId: review.commit.oid } : {}),
+                },
+              ]
+            : [],
+      ),
     };
   }
   async findPullRequest(slug: string, branch: string, base?: string) {

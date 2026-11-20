@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CreatePullRequestDialog } from '../dialogs/CreatePullRequestDialog';
-import type { ReviewSession } from '../../shared/model';
+import type { ReviewSession, Snapshot } from '../../shared/model';
+import type { RemoteReviewState } from '../../shared/review-workflow';
 import { api } from '../api';
 import { fetchSession, hydrateSession } from '../sessions';
 import { hasRefreshCodeChanges } from '../../shared/review-display';
@@ -13,6 +14,34 @@ import styles from './Topbar.module.css';
 import { useFixCompletions } from '../queries';
 import { errorMessage } from '../../shared/errors';
 import { t } from '../../shared/i18n';
+
+/**
+ * The PR on GitHub in a few words. A merged or closed PR still tells who approved it, since
+ * GitHub keeps asking for a review on a PR merged without the required approval.
+ */
+function remoteSummary(remote: RemoteReviewState, snapshot: Snapshot | undefined) {
+  const approvers = (remote.reviews ?? [])
+    .filter((review) => review.state === 'approved')
+    .map((review) => `@${review.author}`);
+  const approved = approvers.length ? t('Approved by {0}', approvers.join(', ')) : '';
+  const status =
+    remote.state === 'merged'
+      ? t('Merged')
+      : remote.state === 'closed'
+        ? t('Closed')
+        : snapshot?.working
+          ? t('Unpublished local changes')
+          : remote.headSha !== snapshot?.headSha
+            ? t('New commits on GitHub')
+            : remote.decision === 'approved'
+              ? approved || t('Approved on GitHub')
+              : remote.decision === 'changes_requested'
+                ? t('Changes requested on GitHub')
+                : remote.decision === 'review_required'
+                  ? t('Review required on GitHub')
+                  : t('Open on GitHub');
+  return approved && !status.startsWith(approved) ? `${status} · ${approved}` : status;
+}
 
 export function Topbar() {
   const {
@@ -106,6 +135,8 @@ export function Topbar() {
         window.setTimeout(() => setNotice(''), 4000);
         return;
       }
+      // The server has already started the follow-up analysis; say so instead of a bare update.
+      const analyzing = !!updated.update && updated.run?.state === 'running';
       await task(t('Loading PR changes'), async () => {
         await load(session.id);
         setRevisionId('');
@@ -113,10 +144,10 @@ export function Topbar() {
           updated.refreshWarnings?.length
             ? t('The PR is updated, but the GitHub discussion did not load completely.')
             : localBases
-              ? updated.update && !updated.run
+              ? analyzing
                 ? t('The base is changed. Analysis has started; the previous review is kept.')
                 : t('The base is changed.')
-              : updated.update && !updated.run
+              : analyzing
                 ? t(
                     'Updates loaded. A follow-up analysis has started; the previous review is kept.',
                   )
@@ -221,23 +252,7 @@ export function Topbar() {
                 </span>
               )}
               {remote && (
-                <span className={styles.branch}>
-                  {remote.state === 'merged'
-                    ? t('Merged')
-                    : remote.state === 'closed'
-                      ? t('Closed')
-                      : reviewSnapshot?.working
-                        ? t('Unpublished local changes')
-                        : remote.headSha !== reviewSnapshot?.headSha
-                          ? t('New commits on GitHub')
-                          : remote.decision === 'approved'
-                            ? t('Approved on GitHub')
-                            : remote.decision === 'changes_requested'
-                              ? t('Changes requested on GitHub')
-                              : remote.decision === 'review_required'
-                                ? t('Review required on GitHub')
-                                : t('Open on GitHub')}
-                </span>
+                <span className={styles.branch}>{remoteSummary(remote, reviewSnapshot)}</span>
               )}
               {reviewSnapshot?.local?.branchName && (
                 <span className={styles.branch} title={reviewSnapshot.local.branchName}>

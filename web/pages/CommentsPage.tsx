@@ -20,7 +20,12 @@ import { highlightLines, languageForPath } from '../syntax';
 import { cx } from '../ui/cx';
 import { t } from '../../shared/i18n';
 import { Icon, IconButton } from '../icons';
-import { ReviewCommentRow } from '../dialogs/ReviewCommentRow';
+import { ReviewCommentRow, when } from '../dialogs/ReviewCommentRow';
+import {
+  discussionRounds,
+  reviewSummaryText,
+  type DiscussionRound,
+} from '../../shared/discussion-rounds';
 import { commentSource, commentTitle } from '../../shared/review-comment';
 import rowStyles from '../dialogs/ReviewDialog.module.css';
 import { useCodexSelection, CodexSelectionActions } from '../workspace/useCodexSelection';
@@ -325,6 +330,10 @@ function GeneralComment({
   );
 }
 
+/** "Review 2", or the PR conversation outside any review. */
+const roundTitle = (round: DiscussionRound<unknown>) =>
+  round.number ? t('Review {0}', round.number) : t('PR conversation');
+
 /** A task for Codex made from a GitHub thread: what was asked and where, in the reviewer's words. */
 function codexTask(thread: Pick<CodeDiscussion, 'root' | 'replies'>) {
   const quote = (comment: ReviewDiscussion) =>
@@ -391,11 +400,20 @@ export function CommentsPage() {
     const general = comments.filter(
       (comment) =>
         !comment.id.startsWith('inline:') &&
-        comment.body.trim() &&
+        // A review that only carried line comments has nothing but Reviewer's marker in its body.
+        reviewSummaryText(comment.body) &&
         (!comment.replyTo || !comments.some((c) => c.id === comment.replyTo)),
     );
     const draft = drafts.find((item) => item.snapshotId === snapshot.id);
-    return { snapshot, threads, general, draft };
+    const rounds = discussionRounds(
+      [
+        ...threads.map((thread) => ({ root: thread.root, thread })),
+        ...general.map((comment) => ({ root: comment, thread: undefined })),
+      ],
+      comments,
+      sessionData.workflow?.remote?.find((remote) => remote.repoId === snapshot.repoId)?.reviews,
+    );
+    return { snapshot, threads, general, draft, rounds };
   });
   const queue = (
     snapshot: Snapshot,
@@ -494,7 +512,7 @@ export function CommentsPage() {
             : t('Comments from GitHub and your own comments on the code appear here.')}
         </Empty>
       )}
-      {groups.map(({ snapshot, threads, general, draft }) => (
+      {groups.map(({ snapshot, threads, general, draft, rounds }) => (
         <div key={snapshot.id} className={styles.repository}>
           {reviewed.length > 1 && (
             <h3 className={styles.repositoryName}>{repoName(snapshot.repoId)}</h3>
@@ -504,28 +522,49 @@ export function CommentsPage() {
               <h4>
                 {t('From reviewers on GitHub')} <span>{threads.length + general.length}</span>
               </h4>
-              {threads.map((thread) => (
-                <ThreadCard
-                  key={thread.root.id}
-                  thread={thread}
-                  selection={selection}
-                  snapshot={snapshot}
-                  queued={queued.has(`${snapshot.id}:${thread.root.id}`)}
-                  onQueue={queue(snapshot, thread)}
-                />
-              ))}
-              {general.map((comment) => (
-                <GeneralComment
-                  key={comment.id}
-                  comment={comment}
-                  selection={selection}
-                  repoId={snapshot.repoId}
-                  replies={reviewDiscussion.comments.filter(
-                    (c) => c.repoId === snapshot.repoId && c.replyTo === comment.id,
+              {rounds.map((round) => (
+                <section key={round.id} className={styles.round} aria-label={roundTitle(round)}>
+                  <h5>
+                    <span>{roundTitle(round)}</span>
+                    {round.author && <span>@{round.author}</span>}
+                    {round.at && <time dateTime={round.at}>{when(round.at)}</time>}
+                    {round.commitId && (
+                      <code title={round.commitId}>{round.commitId.slice(0, 7)}</code>
+                    )}
+                    {round.commitId && round.commitId === snapshot.headSha && (
+                      <span className={styles.current}>{t('Current version')}</span>
+                    )}
+                    {round.decision && (
+                      <span className={cx(styles.decision, styles[round.decision])}>
+                        {round.decision === 'approved' ? t('Approved') : t('Changes requested')}
+                      </span>
+                    )}
+                  </h5>
+                  {round.items.map(({ root, thread }) =>
+                    thread ? (
+                      <ThreadCard
+                        key={root.id}
+                        thread={thread}
+                        selection={selection}
+                        snapshot={snapshot}
+                        queued={queued.has(`${snapshot.id}:${root.id}`)}
+                        onQueue={queue(snapshot, thread)}
+                      />
+                    ) : (
+                      <GeneralComment
+                        key={root.id}
+                        comment={root}
+                        selection={selection}
+                        repoId={snapshot.repoId}
+                        replies={reviewDiscussion.comments.filter(
+                          (c) => c.repoId === snapshot.repoId && c.replyTo === root.id,
+                        )}
+                        queued={queued.has(`${snapshot.id}:${root.id}`)}
+                        onQueue={queue(snapshot, { root, replies: [] })}
+                      />
+                    ),
                   )}
-                  queued={queued.has(`${snapshot.id}:${comment.id}`)}
-                  onQueue={queue(snapshot, { root: comment, replies: [] })}
-                />
+                </section>
               ))}
             </section>
           )}

@@ -4,6 +4,7 @@ import {
   lineage,
   reviewDecision,
   sourceIdentity,
+  type RemoteReviewDecision,
   type ReviewCheckpoint,
 } from './review-workflow.js';
 
@@ -16,6 +17,8 @@ export interface ReviewPoint {
   snapshots: Snapshot[];
   /** Your standing GitHub decision on exactly this code; COMMENT when you only sent comments. */
   decision?: import('./model.js').ReviewAction;
+  /** Approvals and change requests made on GitHub, by anyone, on exactly this code. */
+  reviewers?: RemoteReviewDecision[];
 }
 export interface ReviewRangeComparison {
   from: string;
@@ -89,6 +92,16 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
   const initial =
     session.history?.find((r) => scope(r.snapshots) === scope(session.snapshots))?.snapshots ??
     session.snapshots;
+  const remote = (session.workflow?.remote ?? []).flatMap((state) =>
+    (state.reviews ?? []).map((review) => ({ ...review, repoId: state.repoId })),
+  );
+  // GitHub ties each review to the commit it was written on; the version with that head gets it.
+  const reviewers = (snapshots: Snapshot[]) => {
+    const found = remote.filter((review) =>
+      snapshots.some((s) => s.repoId === review.repoId && s.headSha === review.commitId),
+    );
+    return found.length ? { reviewers: found.map(({ repoId: _, ...review }) => review) } : {};
+  };
   return [
     {
       id: 'base',
@@ -96,7 +109,7 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
       at: session.workflow?.initial.at ?? session.createdAt,
       snapshots: session.workflow?.initial.snapshots ?? initial,
     },
-    ...points,
+    ...points.map((point) => ({ ...point, ...reviewers(point.snapshots) })),
     {
       id: 'current',
       kind: 'current',
@@ -107,6 +120,7 @@ export function reviewPoints(session: ReviewSession): ReviewPoint[] {
         session.createdAt,
       snapshots: session.snapshots,
       ...(currentDecision && { decision: currentDecision }),
+      ...reviewers(session.snapshots),
     },
   ];
 }

@@ -19,7 +19,17 @@ export interface RemoteReviewState {
   headSha: string;
   state: 'open' | 'closed' | 'merged';
   decision: 'approved' | 'changes_requested' | 'review_required' | 'unknown';
+  /** Each reviewer's latest approval or change request, whoever sent it and from wherever. */
+  reviews?: RemoteReviewDecision[];
   at: string;
+}
+export interface RemoteReviewDecision {
+  /** The GitHub review id, as in `review:<id>` discussion items. */
+  id?: number;
+  author: string;
+  state: 'approved' | 'changes_requested';
+  at: string;
+  commitId?: string;
 }
 export interface ReviewWorkflow {
   version: 1;
